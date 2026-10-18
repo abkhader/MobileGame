@@ -41,30 +41,32 @@ abstract final class Rules {
     return next;
   }
 
-  /// Ends the current run: it becomes a ghost, then either the level is lost
-  /// (last run) or the next run starts with every actor back on the start.
+  /// Ends the current run. On the last run the level is lost and only the
+  /// status changes; otherwise the run becomes a ghost and the next run
+  /// starts with every actor back on the start.
   static GameState endRun(GameState s) {
     if (s.status != GameStatus.playing) {
       throw StateError(
           'Cannot end run: the level is already ${s.status.name}.');
     }
     final level = s.level;
-    final ghosts = [...s.ghosts, s.currentRun];
-    final completedTicks = s.completedTicks + s.tick;
     if (s.runIndex == level.runLimit - 1) {
+      // Lost: only the status changes, so the final run is counted once.
       return GameState(
         level: level,
         runIndex: s.runIndex,
         tick: s.tick,
         currentRun: s.currentRun,
-        ghosts: ghosts,
+        ghosts: s.ghosts,
         player: s.player,
-        ghostPositions: [...s.ghostPositions, s.player],
+        ghostPositions: s.ghostPositions,
         openDoors: s.openDoors,
-        completedTicks: completedTicks,
+        completedTicks: s.completedTicks,
         status: GameStatus.lost,
       );
     }
+    final ghosts = [...s.ghosts, s.currentRun];
+    final completedTicks = s.completedTicks + s.tick;
     final ghostPositions = List.filled(ghosts.length, level.start);
     return GameState(
       level: level,

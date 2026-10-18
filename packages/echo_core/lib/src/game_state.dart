@@ -6,6 +6,9 @@ enum GameStatus { playing, won, lost }
 
 /// An immutable snapshot of a level in progress. Collections passed in are
 /// wrapped as unmodifiable.
+///
+/// Invariant: `ghostPositions.length == ghosts.length`. In a lost state the
+/// final run is still in [currentRun] (and [tick]), not in [ghosts].
 class GameState {
   GameState({
     required this.level,
