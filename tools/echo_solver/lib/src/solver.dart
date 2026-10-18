@@ -42,7 +42,8 @@ SolveResult solve(Level level, {int maxNodes = 5000000}) {
         bound++) {
       final win = search.run(bound);
       if (win != null) {
-        return Solved(bound, [...win.ghosts, win.currentRun]);
+        assert(win.score == bound);
+        return Solved(win.score, [...win.ghosts, win.currentRun]);
       }
     }
   } on _BudgetAbort {

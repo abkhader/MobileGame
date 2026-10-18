@@ -8,11 +8,12 @@ int? replayScore(Level level, List<List<Move>> runs) {
   var state = GameState.initial(level);
   try {
     for (var i = 0; i < runs.length; i++) {
+      if (runs[i].length > Rules.maxTicksPerRun) return null;
       for (final move in runs[i]) {
         state = Rules.step(state, move);
       }
       // A run of 25 moves was already ended by Rules.step.
-      if (i < runs.length - 1 && state.runIndex == i) {
+      if (i < runs.length - 1 && runs[i].length != Rules.maxTicksPerRun) {
         state = Rules.endRun(state);
       }
     }

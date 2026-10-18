@@ -46,4 +46,14 @@ void main() {
         ]),
         isNull);
   });
+  test('replayScore rejects runs longer than 25 moves', () {
+    final level = l(['S.E'], 2);
+    final run = [...List.filled(25, Move.wait), Move.right];
+    expect(
+        replayScore(level, [
+          run,
+          [Move.right]
+        ]),
+        isNull);
+  });
 }
