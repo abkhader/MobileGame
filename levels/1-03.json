@@ -1,0 +1,23 @@
+{
+  "id": "1-03",
+  "name": "Echo",
+  "runLimit": 2,
+  "tip": "Tap End run. Your past self will help you.",
+  "grid": [
+    "#######",
+    "#Sa.AE#",
+    "#######"
+  ],
+  "bestScore": 5,
+  "solution": [
+    [
+      "R"
+    ],
+    [
+      "R",
+      "R",
+      "R",
+      "R"
+    ]
+  ]
+}
