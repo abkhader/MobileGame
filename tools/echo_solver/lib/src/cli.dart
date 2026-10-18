@@ -81,7 +81,12 @@ String _baseName(File file) => file.uri.pathSegments.last;
 
 /// Returns `OK (best N)` or the failure reason.
 String _process(File file, _Options options) {
-  final text = file.readAsStringSync();
+  final String text;
+  try {
+    text = file.readAsStringSync();
+  } on FileSystemException {
+    return 'cannot read file';
+  }
   final Level level;
   try {
     level = LevelLoader.parse(text);

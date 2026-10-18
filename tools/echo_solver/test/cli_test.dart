@@ -113,6 +113,14 @@ void main() {
     expect(out, 'a.json: FAIL unsolvable\n');
   });
 
+  test('an unreadable file fails and processing continues', () async {
+    File('${dir.path}/bad.json').writeAsBytesSync([0xff, 0xfe, 0xfd]);
+    put('ok.json', level('ok', ['#######', '#S...E#', '#######'], 1));
+    final (code, out) = await run(['--write']);
+    expect(code, 1);
+    expect(out, 'bad.json: FAIL cannot read file\nok.json: OK (best 4)\n');
+  });
+
   test('--write does not modify a file that fails', () async {
     put('x.json', level('y', ['#######', '#S...E#', '#######'], 1));
     final before = File('${dir.path}/x.json').readAsStringSync();

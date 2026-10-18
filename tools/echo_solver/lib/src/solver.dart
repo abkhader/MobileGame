@@ -42,7 +42,10 @@ SolveResult solve(Level level, {int maxNodes = 5000000}) {
         bound++) {
       final win = search.run(bound);
       if (win != null) {
-        assert(win.score == bound);
+        if (win.score != bound) {
+          throw StateError(
+              'solver invariant broken: score ${win.score} != bound $bound');
+        }
         return Solved(win.score, [...win.ghosts, win.currentRun]);
       }
     }
