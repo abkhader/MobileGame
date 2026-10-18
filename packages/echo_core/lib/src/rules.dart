@@ -7,31 +7,84 @@ import 'tile.dart';
 abstract final class Rules {
   static const maxTicksPerRun = 25;
 
-  /// Advances the player by one tick.
+  /// Advances one tick: ghosts (oldest first) move, then the player. All
+  /// moves see the doors from the end of the previous tick; doors are
+  /// recomputed once afterwards. A win on the final tick beats the tick cap.
   static GameState step(GameState s, Move m) {
     if (s.status != GameStatus.playing) {
       throw StateError('Cannot step: the level is already ${s.status.name}.');
     }
     final level = s.level;
-    var player = s.player;
-    final target = player + m.delta;
-    if (_passable(level, target, s.openDoors)) player = target;
+    final ghostPositions = <Position>[];
+    for (var i = 0; i < s.ghosts.length; i++) {
+      final recording = s.ghosts[i];
+      final move = s.tick < recording.length ? recording[s.tick] : Move.wait;
+      ghostPositions.add(_move(level, s.ghostPositions[i], move, s.openDoors));
+    }
+    final player = _move(level, s.player, m, s.openDoors);
 
-    return GameState(
+    final next = GameState(
       level: level,
       runIndex: s.runIndex,
       tick: s.tick + 1,
       currentRun: [...s.currentRun, m],
       ghosts: s.ghosts,
       player: player,
-      ghostPositions: s.ghostPositions,
-      openDoors: _openDoors(level, [player]),
+      ghostPositions: ghostPositions,
+      openDoors: _openDoors(level, [...ghostPositions, player]),
       completedTicks: s.completedTicks,
       status: player == level.exit ? GameStatus.won : GameStatus.playing,
     );
+    if (next.status == GameStatus.playing && next.tick == maxTicksPerRun) {
+      return endRun(next);
+    }
+    return next;
   }
 
-  static GameState endRun(GameState s) => throw UnimplementedError();
+  /// Ends the current run: it becomes a ghost, then either the level is lost
+  /// (last run) or the next run starts with every actor back on the start.
+  static GameState endRun(GameState s) {
+    if (s.status != GameStatus.playing) {
+      throw StateError(
+          'Cannot end run: the level is already ${s.status.name}.');
+    }
+    final level = s.level;
+    final ghosts = [...s.ghosts, s.currentRun];
+    final completedTicks = s.completedTicks + s.tick;
+    if (s.runIndex == level.runLimit - 1) {
+      return GameState(
+        level: level,
+        runIndex: s.runIndex,
+        tick: s.tick,
+        currentRun: s.currentRun,
+        ghosts: ghosts,
+        player: s.player,
+        ghostPositions: [...s.ghostPositions, s.player],
+        openDoors: s.openDoors,
+        completedTicks: completedTicks,
+        status: GameStatus.lost,
+      );
+    }
+    final ghostPositions = List.filled(ghosts.length, level.start);
+    return GameState(
+      level: level,
+      runIndex: s.runIndex + 1,
+      tick: 0,
+      currentRun: const [],
+      ghosts: ghosts,
+      player: level.start,
+      ghostPositions: ghostPositions,
+      openDoors: _openDoors(level, [...ghostPositions, level.start]),
+      completedTicks: completedTicks,
+      status: GameStatus.playing,
+    );
+  }
+
+  static Position _move(
+      Level level, Position from, Move m, Set<Position> openDoors) {
+    final target = from + m.delta;
+    return _passable(level, target, openDoors) ? target : from;
+  }
 
   static bool _passable(Level level, Position p, Set<Position> openDoors) {
     if (!level.inBounds(p)) return false;
