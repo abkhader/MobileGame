@@ -228,6 +228,9 @@ void main() {
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);
+    // The last level's tile can sit below the 800x600 test viewport.
+    await t.ensureVisible(find.text('${levelNumber(ids, last)}'));
+    await t.pump(_frame);
     await t.tap(find.text('${levelNumber(ids, last)}'));
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
@@ -237,12 +240,12 @@ void main() {
     await _settle(t);
     await t.pump(const Duration(milliseconds: 500));
     expect(find.byType(GameScreen), findsNothing);
-    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(find.text(chapterOf(last)), findsOneWidget);
     expect(services.progress.progressOf(last).completed, isTrue);
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
-    expect(find.text('Chapter 1'), findsNothing);
+    expect(find.text(chapterOf(last)), findsNothing);
     expect(find.text('Play'), findsOneWidget);
   });
 }
