@@ -35,8 +35,19 @@ class _BudgetAbort implements Exception {
 
 /// Finds the minimum total score by iterative deepening on the score bound.
 /// The first bound that admits a win is the minimum.
-SolveResult solve(Level level, {int maxNodes = 30000000}) {
-  final search = _Search(level, maxNodes);
+SolveResult solve(Level level, {int maxNodes = 30000000}) =>
+    _solve(level, maxNodes, prune: true);
+
+/// [solve] with the run-pruning rule switchable, so tests can compare the
+/// pruned search against the unpruned one. Production code uses [solve].
+SolveResult solveForTesting(
+  Level level, {
+  int maxNodes = 30000000,
+  bool prune = true,
+}) => _solve(level, maxNodes, prune: prune);
+
+SolveResult _solve(Level level, int maxNodes, {required bool prune}) {
+  final search = _Search(level, maxNodes, prune: prune);
   final d0 = search.dist(level.start);
   if (d0 == _Search.unreachable) return const Unsolvable();
   try {
@@ -65,7 +76,7 @@ SolveResult solve(Level level, {int maxNodes = 30000000}) {
 }
 
 class _Search {
-  _Search(this.level, this.maxNodes) {
+  _Search(this.level, this.maxNodes, {required this.prune}) {
     _computeDistances();
     d0 = dist(level.start);
   }
@@ -74,6 +85,7 @@ class _Search {
 
   final Level level;
   final int maxNodes;
+  final bool prune;
   late final int d0;
   int nodes = 0;
   late final List<int> _dist;
@@ -125,6 +137,7 @@ class _Search {
   /// True when moving [move] from [from] targets a plate or a door, even if
   /// the move ends up blocked: a ghost replaying it may later get through.
   bool _touchesPlateOrDoor(Position from, Move move) {
+    if (!prune) return true;
     if (move == Move.wait) return false;
     final kind = level.tileAt(from + move.delta).kind;
     return kind == TileKind.plate || kind == TileKind.door;

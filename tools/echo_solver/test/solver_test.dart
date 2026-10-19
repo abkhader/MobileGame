@@ -4,6 +4,8 @@ import 'package:echo_core/echo_core.dart';
 import 'package:echo_solver/echo_solver.dart';
 import 'package:test/test.dart';
 
+import 'data/multirun_levels.dart';
+
 Level l(List<String> g, int runs) =>
     LevelLoader.fromMap({'id': 't', 'name': 't', 'runLimit': runs, 'grid': g});
 
@@ -75,6 +77,30 @@ void main() {
         solve(l(['a.S...b.', '#######A', '#######B', '#######E'], 3)) as Solved;
     expect(r.bestScore, 14);
     expect(r.nodes, lessThan(200000));
+  });
+  test('differential: pruning never changes the best score', () {
+    for (final (grid, runs) in multiRunLevels) {
+      final level = l(grid, runs);
+      final label = '${grid.join('/')} runs=$runs';
+      final unpruned = solveForTesting(level, prune: false);
+      final pruned = solveForTesting(level);
+      expect(unpruned, isA<Solved>(), reason: label);
+      expect(pruned, isA<Solved>(), reason: label);
+      final best = (unpruned as Solved).bestScore;
+      expect((pruned as Solved).bestScore, best, reason: label);
+      expect(replayScore(level, pruned.solution), best, reason: label);
+      expect(pruned.nodes, lessThanOrEqualTo(unpruned.nodes), reason: label);
+    }
+  });
+  // The only cheaper plan has a first run that never touches a plate: it just
+  // pushes into door A (blocked while closed, then through once the final run
+  // opens it) and pushes on. Dropping door targets from the pruning rule
+  // makes the solver miss it and report 10.
+  test('regression: a run that only targets a door still counts', () {
+    final level = l(['bCaS', 'B.CA', '#E#c'], 3);
+    final r = solve(level) as Solved;
+    expect(r.bestScore, 9);
+    expect(replayScore(level, r.solution), 9);
   });
   test('differential: pruned solver matches exhaustive search', () {
     final rng = Random(42);
