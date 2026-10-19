@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:echo_core/echo_core.dart';
@@ -82,8 +83,8 @@ void main() {
     for (final (grid, runs) in multiRunLevels) {
       final level = l(grid, runs);
       final label = '${grid.join('/')} runs=$runs';
-      final unpruned = solveForTesting(level, prune: false);
-      final pruned = solveForTesting(level);
+      final unpruned = solveSequential(level, prune: false);
+      final pruned = solveSequential(level);
       expect(unpruned, isA<Solved>(), reason: label);
       expect(pruned, isA<Solved>(), reason: label);
       final best = (unpruned as Solved).bestScore;
@@ -101,6 +102,78 @@ void main() {
     final r = solve(level) as Solved;
     expect(r.bestScore, 9);
     expect(replayScore(level, r.solution), 9);
+  });
+  test('joint solver matches the sequential solver', () {
+    final levels = <(String, Level)>[
+      for (final (grid, runs) in multiRunLevels)
+        ('${grid.join('/')} runs=$runs', l(grid, runs)),
+      for (var n = 1; n <= 10; n++)
+        (
+          '1-${'$n'.padLeft(2, '0')}',
+          LevelLoader.parse(
+            File(
+              '../../app/assets/levels/1-${'$n'.padLeft(2, '0')}.json',
+            ).readAsStringSync(),
+          ),
+        ),
+      for (final (grid, runs) in _handWritten)
+        ('${grid.join('/')} runs=$runs', l(grid, runs)),
+    ];
+    for (final (label, level) in levels) {
+      final joint = solve(level);
+      final sequential = solveSequential(level);
+      if (sequential is Unsolvable) {
+        expect(joint, isA<Unsolvable>(), reason: label);
+        continue;
+      }
+      expect(sequential, isA<Solved>(), reason: label);
+      expect(joint, isA<Solved>(), reason: label);
+      final best = (sequential as Solved).bestScore;
+      expect((joint as Solved).bestScore, best, reason: label);
+      expect(replayScore(level, joint.solution), best, reason: label);
+    }
+  });
+
+  /// Solves [grid] with [runs] runs in under 5 s and checks the result.
+  SolveResult timedSolve(List<String> grid, int runs) {
+    final watch = Stopwatch()..start();
+    final result = solve(l(grid, runs));
+    expect(
+      watch.elapsed,
+      lessThan(const Duration(seconds: 5)),
+      reason: '${grid.join('/')} runs=$runs',
+    );
+    if (result is Solved) {
+      expect(replayScore(l(grid, runs), result.solution), result.bestScore);
+    }
+    return result;
+  }
+
+  test('proves 3-run levels need all 3 runs', () {
+    final full = timedSolve(_alternatingTwo, 3);
+    expect(full, isA<Solved>());
+    expect((full as Solved).bestScore, 33);
+    expect(full.solution, hasLength(3));
+    expect(timedSolve(_alternatingTwo, 2), isA<Unsolvable>());
+  });
+  test('proves 4-run levels need all 4 runs', () {
+    final full = timedSolve(_alternatingThree, 4);
+    expect(full, isA<Solved>());
+    expect((full as Solved).bestScore, 30);
+    expect(full.solution, hasLength(4));
+    expect(timedSolve(_alternatingThree, 3), isA<Unsolvable>());
+  });
+  // The 2-01 and 2-02 probes were meant to need 3 runs, but one ghost can
+  // press both plates in turn while the player waits inside each opened door
+  // (doors never close on an actor), so 2 runs suffice.
+  test('the 2-01 and 2-02 probes are solvable with 2 runs', () {
+    for (final (grid, runs, best, bestWithFewer) in _threeRunProbes) {
+      final full = timedSolve(grid, runs);
+      expect((full as Solved).bestScore, best);
+      final fewer = timedSolve(grid, runs - 1);
+      expect((fewer as Solved).bestScore, bestWithFewer);
+      expect(fewer.solution, hasLength(2));
+    }
   });
   test('differential: pruned solver matches exhaustive search', () {
     final rng = Random(42);
@@ -146,6 +219,70 @@ void main() {
     expect(needingGhosts, greaterThan(0));
   });
 }
+
+/// The hand-written levels above, for the joint-vs-sequential comparison.
+const _handWritten = <(List<String>, int)>[
+  (['#######', '#S...E#', '#######'], 1),
+  (['#######', '#S.aAE#', '#######'], 1),
+  (['#######', '#Sa.AE#', '#######'], 2),
+  (['#######', '#Sa.AE#', '#######'], 1),
+  (['S#E'], 4),
+  (['a.S...b.', '#######A', '#######B', '#######E'], 3),
+  (['bCaS', 'B.CA', '#E#c'], 3),
+];
+
+/// Probe levels 2-01 and 2-02: grid, runLimit, best score, best score with
+/// one run fewer.
+const _threeRunProbes = <(List<String>, int, int, int)>[
+  (
+    [
+      '########',
+      '#a..S.b#',
+      '####.###',
+      '####A###',
+      '####B###',
+      '####E###',
+      '########',
+    ],
+    3,
+    11,
+    18,
+  ),
+  (
+    ['#####', '#S.a#', '#.###', '#b###', '#A###', '#B###', '#E###', '#####'],
+    3,
+    9,
+    14,
+  ),
+];
+
+/// Doors alternate A/B on the only way to the exit, and the plates are 16
+/// moves apart, so one ghost cannot hold both in time (25-tick runs): the
+/// level needs two ghosts.
+const _alternatingTwo = [
+  'b.......',
+  '#######.',
+  'a..S....',
+  '###A####',
+  '###B####',
+  '###A####',
+  '###B####',
+  '###E####',
+];
+
+/// The same with three channels (doors A/B/C twice): needs three ghosts.
+const _alternatingThree = [
+  'c.....#b',
+  '#####.#.',
+  'a...S...',
+  '####A###',
+  '####B###',
+  '####C###',
+  '####A###',
+  '####B###',
+  '####C###',
+  '####E###',
+];
 
 // Total-score cap for the exhaustive reference. The brief asked for 9; that
 // is far over the 30 s test budget for an unpruned search, so it is 6 here.

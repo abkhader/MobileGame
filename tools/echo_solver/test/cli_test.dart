@@ -209,7 +209,15 @@ void main() {
 
     test('a reduced solve that exceeds the budget fails', () async {
       put('1-03.json', level('1-03', echoGrid, 2));
-      final (code, out) = await run(['--write', '--max-nodes', '50']);
+      // The main solve searches every smaller run count first, so a shared
+      // --max-nodes cannot overflow only the proof: shrink its budget alone.
+      final buffer = StringBuffer();
+      final code = await runCli(
+        [dir.path, '--write'],
+        out: buffer,
+        reducedMaxNodes: 1,
+      );
+      final out = buffer.toString();
       expect(code, 1);
       expect(
         out,
