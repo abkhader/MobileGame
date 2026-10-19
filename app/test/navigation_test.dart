@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:echo_app/app_services.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
@@ -48,6 +50,36 @@ Future<void> _winLevel1(WidgetTester t) async {
   await t.pump(const Duration(milliseconds: 500));
 }
 
+/// Delegates to a real repository but holds recordCompletion on [gate].
+class _GatedProgress implements ProgressRepository {
+  _GatedProgress(this._inner);
+
+  final ProgressRepository _inner;
+  final gate = Completer<void>();
+
+  @override
+  Future<void> recordCompletion(String id, int stars) async {
+    await gate.future;
+    await _inner.recordCompletion(id, stars);
+  }
+
+  @override
+  LevelProgress progressOf(String id) => _inner.progressOf(id);
+  @override
+  bool isUnlocked(String id, List<String> orderedIds) =>
+      _inner.isUnlocked(id, orderedIds);
+  @override
+  Future<void> recordSkip(String id) => _inner.recordSkip(id);
+  @override
+  bool get musicOn => _inner.musicOn;
+  @override
+  bool get sfxOn => _inner.sfxOn;
+  @override
+  Future<void> setMusicOn(bool value) => _inner.setMusicOn(value);
+  @override
+  Future<void> setSfxOn(bool value) => _inner.setSfxOn(value);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -79,10 +111,33 @@ void main() {
     expect(find.text('Score 4 · Best 4'), findsOneWidget);
   });
 
+  testWidgets('Level complete waits for the save to finish', (t) async {
+    final real = await _services(t);
+    final gated = _GatedProgress(real.progress);
+    final services = AppServices(levels: real.levels, progress: gated);
+    await _pumpHome(t, services);
+    await _openLevelSelect(t);
+    await _tapAndPump(t, find.text('1'));
+    await _winLevel1(t);
+    expect(find.text('Level complete'), findsNothing);
+    expect(services.completedThisSession, 0);
+    gated.gate.complete();
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('Level complete'), findsOneWidget);
+    expect(services.completedThisSession, 1);
+    final reopened = (await t.runAsync(ProgressRepository.open))!;
+    expect(reopened.progressOf('1-01').stars, 3);
+  });
+
   testWidgets('Next opens level 2; Level Select shows progress', (t) async {
     final services = await _services(t);
     await _pumpHome(t, services);
     await _openLevelSelect(t);
+    expect(find.byIcon(Icons.lock), findsNWidgets(2));
     await _tapAndPump(t, find.text('1'));
     await _winLevel1(t);
     await _tapAndPump(t, find.text('Next'));
