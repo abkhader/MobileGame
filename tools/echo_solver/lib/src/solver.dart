@@ -9,10 +9,13 @@ sealed class SolveResult {
 /// The level's minimum total score and a solution reaching it: every run,
 /// including the winning one.
 class Solved extends SolveResult {
-  const Solved(this.bestScore, this.solution);
+  const Solved(this.bestScore, this.solution, {this.nodes = 0});
 
   final int bestScore;
   final List<List<Move>> solution;
+
+  /// `Rules.step` calls used across the whole search.
+  final int nodes;
 }
 
 class Unsolvable extends SolveResult {
@@ -32,7 +35,7 @@ class _BudgetAbort implements Exception {
 
 /// Finds the minimum total score by iterative deepening on the score bound.
 /// The first bound that admits a win is the minimum.
-SolveResult solve(Level level, {int maxNodes = 5000000}) {
+SolveResult solve(Level level, {int maxNodes = 30000000}) {
   final search = _Search(level, maxNodes);
   final d0 = search.dist(level.start);
   if (d0 == _Search.unreachable) return const Unsolvable();
@@ -49,7 +52,10 @@ SolveResult solve(Level level, {int maxNodes = 5000000}) {
             'solver invariant broken: score ${win.score} != bound $bound',
           );
         }
-        return Solved(win.score, [...win.ghosts, win.currentRun]);
+        return Solved(win.score, [
+          ...win.ghosts,
+          win.currentRun,
+        ], nodes: search.nodes);
       }
     }
   } on _BudgetAbort {
@@ -108,7 +114,7 @@ class _Search {
 
   GameState? run(int bound) {
     final root = GameState.initial(level);
-    return _dfs(root, bound, level.runLimit == 1 ? <int, int>{} : null);
+    return _dfs(root, bound, level.runLimit == 1 ? <int, int>{} : null, false);
   }
 
   GameState _step(GameState s, Move m) {
@@ -116,8 +122,24 @@ class _Search {
     return Rules.step(s, m);
   }
 
-  /// [memo] is non-null exactly while in the last run.
-  GameState? _dfs(GameState state, int bound, Map<int, int>? memo) {
+  /// True when moving [move] from [from] targets a plate or a door, even if
+  /// the move ends up blocked: a ghost replaying it may later get through.
+  bool _touchesPlateOrDoor(Position from, Move move) {
+    if (move == Move.wait) return false;
+    final kind = level.tileAt(from + move.delta).kind;
+    return kind == TileKind.plate || kind == TileKind.door;
+  }
+
+  /// [memo] is non-null exactly while in the last run. [interacted] says
+  /// whether the current run has targeted a plate or door yet; a run that
+  /// never has replays as a ghost that cannot affect any other actor, so
+  /// ending it is never part of a cheapest solution.
+  GameState? _dfs(
+    GameState state,
+    int bound,
+    Map<int, int>? memo,
+    bool interacted,
+  ) {
     if (state.status == GameStatus.won) return state;
     if (state.status == GameStatus.lost) return null;
     final remaining = bound - state.score;
@@ -133,16 +155,25 @@ class _Search {
     }
     for (final move in _moveOrder) {
       if (!_walkable(state.player + move.delta)) continue;
+      final touched = interacted || _touchesPlateOrDoor(state.player, move);
       final next = _step(state, move);
-      final win = _dfs(next, bound, _memoFor(state, next, memo));
+      final ended = next.runIndex > state.runIndex;
+      if (ended && !touched) continue;
+      final win = _dfs(
+        next,
+        bound,
+        _memoFor(state, next, memo),
+        ended ? false : touched,
+      );
       if (win != null) return win;
     }
-    if (!lastRun &&
+    if (interacted &&
+        !lastRun &&
         state.tick > 0 &&
         state.currentRun.last != Move.wait &&
         remaining >= d0) {
       final next = Rules.endRun(state);
-      final win = _dfs(next, bound, _memoFor(state, next, memo));
+      final win = _dfs(next, bound, _memoFor(state, next, memo), false);
       if (win != null) return win;
     }
     return null;
