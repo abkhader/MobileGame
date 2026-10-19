@@ -134,6 +134,26 @@ void main() {
     }
   });
 
+  // Chapter 3 is the first real user of 4-run levels, so the joint solver's
+  // 4-run path gets its own comparison against the sequential reference.
+  test('joint solver matches the sequential solver with 4 runs', () {
+    for (final (grid, _) in multiRunLevels.take(15)) {
+      final level = l(grid, 4);
+      final label = '${grid.join('/')} runs=4';
+      final joint = solve(level);
+      final sequential = solveSequential(level);
+      if (sequential is Unsolvable) {
+        expect(joint, isA<Unsolvable>(), reason: label);
+        continue;
+      }
+      expect(sequential, isA<Solved>(), reason: label);
+      expect(joint, isA<Solved>(), reason: label);
+      final best = (sequential as Solved).bestScore;
+      expect((joint as Solved).bestScore, best, reason: label);
+      expect(replayScore(level, joint.solution), best, reason: label);
+    }
+  });
+
   /// Solves [grid] with [runs] runs in under 5 s and checks the result.
   SolveResult timedSolve(List<String> grid, int runs) {
     final watch = Stopwatch()..start();
