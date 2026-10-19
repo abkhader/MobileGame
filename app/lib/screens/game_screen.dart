@@ -8,6 +8,7 @@ import '../app_services.dart';
 import '../game/echo_board.dart';
 import '../game/game_controller.dart';
 import '../game/input.dart';
+import 'level_complete_screen.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -57,13 +58,42 @@ class _GameScreenState extends State<GameScreen> {
     final c = _controller!;
     if (c.lastEvent == GameEvent.won && _winTimer == null) {
       _winTimer = Timer(_winDelay, () {
-        if (mounted) widget.onWon?.call(c);
+        if (!mounted) return;
+        final onWon = widget.onWon;
+        if (onWon != null) {
+          onWon(c);
+        } else {
+          _defaultOnWon(c);
+        }
       });
     } else if (c.state.status != GameStatus.won) {
       _winTimer?.cancel();
       _winTimer = null;
     }
     setState(() {});
+  }
+
+  Future<void> _defaultOnWon(GameController c) async {
+    // The controller is disposed once this route is replaced: copy first.
+    final services = widget.services;
+    final levelId = widget.levelId;
+    final score = c.state.score;
+    final stars = c.stars!;
+    final best = c.level.bestScore ?? score;
+    await services.progress.recordCompletion(levelId, stars);
+    services.completedThisSession++;
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => LevelCompleteScreen(
+          services: services,
+          levelId: levelId,
+          score: score,
+          best: best,
+          stars: stars,
+        ),
+      ),
+    );
   }
 
   @override

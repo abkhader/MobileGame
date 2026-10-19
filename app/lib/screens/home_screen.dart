@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
+import 'level_select_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({required this.services, super.key});
@@ -16,9 +18,23 @@ class HomeScreen extends StatelessWidget {
           children: [
             Text('Echo', style: Theme.of(context).textTheme.displayLarge),
             const SizedBox(height: 32),
-            FilledButton(onPressed: () {}, child: const Text('Play')),
+            FilledButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => LevelSelectScreen(services: services),
+                ),
+              ),
+              child: const Text('Play'),
+            ),
             const SizedBox(height: 12),
-            OutlinedButton(onPressed: () {}, child: const Text('Settings')),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsScreen(services: services),
+                ),
+              ),
+              child: const Text('Settings'),
+            ),
           ],
         ),
       ),
