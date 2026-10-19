@@ -4,8 +4,17 @@ import 'package:flutter/widgets.dart';
 import 'app.dart';
 import 'app_services.dart';
 import 'data/level_repository.dart';
+import 'data/progress_repository.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(EchoApp(services: AppServices(levels: LevelRepository(rootBundle))));
+  final progress = await ProgressRepository.open();
+  runApp(
+    EchoApp(
+      services: AppServices(
+        levels: LevelRepository(rootBundle),
+        progress: progress,
+      ),
+    ),
+  );
 }
