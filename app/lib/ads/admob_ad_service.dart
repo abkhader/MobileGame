@@ -17,6 +17,10 @@ class AdMobAdService implements AdService {
   Future<void> initialize() async {
     try {
       await _resolveConsent();
+    } catch (_) {
+      // Consent failed: ads may still load, non-personalized.
+    }
+    try {
       await MobileAds.instance.initialize();
       _ready = true;
       _loadInterstitial();
@@ -99,26 +103,22 @@ class AdMobAdService implements AdService {
     if (ad == null) return false;
     _rewarded = null;
     final done = Completer<bool>();
-    var earned = false;
-    void finish() {
-      ad.dispose();
-      _loadRewarded();
+    void finish(bool earned) {
       if (!done.isCompleted) done.complete(earned);
     }
 
     ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (_) => finish(),
-      onAdFailedToShowFullScreenContent: (_, _) {
-        earned = false;
-        finish();
-      },
+      onAdDismissedFullScreenContent: (_) => finish(false),
+      onAdFailedToShowFullScreenContent: (_, _) => finish(false),
     );
     try {
-      await ad.show(onUserEarnedReward: (_, _) => earned = true);
+      await ad.show(onUserEarnedReward: (_, _) => finish(true));
       return await done.future;
     } catch (_) {
-      if (!done.isCompleted) finish();
       return false;
+    } finally {
+      ad.dispose();
+      _loadRewarded();
     }
   }
 }

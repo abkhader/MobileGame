@@ -10,7 +10,6 @@ import '../game/game_controller.dart';
 import '../game/input.dart';
 import '../hints/hint_service.dart';
 import 'level_complete_screen.dart';
-import 'level_select_screen.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -101,35 +100,45 @@ class _GameScreenState extends State<GameScreen> {
   Future<void> _onHint() async {
     if (_adBusy) return;
     _adBusy = true;
-    final rewarded = await widget.services.ads.showRewarded();
-    _adBusy = false;
-    if (!mounted) return;
-    if (!rewarded) return _showNoAd();
-    _hintUnlocked = true;
-    _syncHint();
-    setState(() {});
+    try {
+      final rewarded = await widget.services.ads.showRewarded();
+      if (!mounted) return;
+      if (!rewarded) return _showNoAd();
+      _hintUnlocked = true;
+      _syncHint();
+      setState(() {});
+    } finally {
+      _adBusy = false;
+    }
   }
 
   Future<void> _onSkip() async {
     if (_adBusy) return;
     _adBusy = true;
-    final services = widget.services;
-    final rewarded = await services.ads.showRewarded();
-    _adBusy = false;
-    if (!mounted) return;
-    if (!rewarded) return _showNoAd();
-    await services.progress.recordSkip(widget.levelId);
-    final ids = await services.levels.levelIds();
-    if (!mounted) return;
-    final i = ids.indexOf(widget.levelId);
-    final nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => nextId == null
-            ? LevelSelectScreen(services: services)
-            : GameScreen(services: services, levelId: nextId),
-      ),
-    );
+    try {
+      final services = widget.services;
+      final rewarded = await services.ads.showRewarded();
+      if (!mounted) return;
+      if (!rewarded) return _showNoAd();
+      await services.progress.recordSkip(widget.levelId);
+      final ids = await services.levels.levelIds();
+      if (!mounted) return;
+      final i = ids.indexOf(widget.levelId);
+      final nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
+      final navigator = Navigator.of(context);
+      if (nextId == null) {
+        // Back to the Level Select underneath, which refreshes on return.
+        navigator.pop();
+      } else {
+        await navigator.pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => GameScreen(services: services, levelId: nextId),
+          ),
+        );
+      }
+    } finally {
+      _adBusy = false;
+    }
   }
 
   Future<void> _defaultOnWon(GameController c) async {

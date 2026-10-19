@@ -3,9 +3,12 @@ import 'package:echo_app/app_services.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/game/echo_board.dart';
+import 'package:echo_app/hints/hint_service.dart';
 import 'package:echo_app/screens/game_screen.dart';
+import 'package:echo_app/screens/home_screen.dart';
 import 'package:echo_app/screens/level_complete_screen.dart';
 import 'package:flame/game.dart';
+import 'package:echo_core/echo_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -168,5 +171,74 @@ void main() {
     await _settle(t);
     expect(policy.calls, [(completed: 3, number: 2)]);
     expect(ads.interstitialsShown, 1);
+  });
+
+  testWidgets('hint path refreshes when the run changes', (t) async {
+    final services = await _services(t, FakeAdService());
+    await _pumpGame(t, services, '1-03');
+    final level = (await t.runAsync(() => services.levels.load('1-03')))!;
+    await t.tap(find.text('Hint'));
+    await t.pump(_frame);
+    expect(_echoBoard(t).hintPath, HintService.pathFor(level, 0));
+    await t.fling(_board, const Offset(300, 0), 1000);
+    await t.pump(_frame);
+    await t.tap(find.text('End run'));
+    await t.pump(_frame);
+    expect(find.text('Run 2 / 2'), findsOneWidget);
+    expect(_echoBoard(t).hintPath, HintService.pathFor(level, 1));
+    expect(_echoBoard(t).hintPath!.last, const Position(5, 1));
+  });
+
+  testWidgets('hint survives Restart and the mismatch note follows ghosts', (
+    t,
+  ) async {
+    const note =
+        'Hints follow the best solution. Restart the level to match them.';
+    await _pumpGame(t, await _services(t, FakeAdService()), '1-03');
+    await t.tap(find.text('Hint'));
+    await t.pump(_frame);
+    expect(find.text(note), findsNothing);
+    await t.tap(_board);
+    await t.pump(_frame);
+    await t.tap(find.text('End run'));
+    await t.pump(_frame);
+    expect(find.text(note), findsOneWidget);
+    await t.tap(find.text('Restart'));
+    await t.pump(_frame);
+    expect(find.text('Run 1 / 2'), findsOneWidget);
+    expect(find.text(note), findsNothing);
+    expect(_echoBoard(t).hintPath, isNotNull);
+  });
+
+  testWidgets('Skip on the last level returns to the existing Level Select', (
+    t,
+  ) async {
+    final ads = FakeAdService();
+    final services = await _services(t, ads);
+    await t.runAsync(() async {
+      await services.progress.recordCompletion('1-01', 3);
+      await services.progress.recordCompletion('1-02', 3);
+    });
+    await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
+    await t.tap(find.text('Play'));
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 500));
+    await _settle(t);
+    await t.tap(find.text('3'));
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 500));
+    await _settle(t);
+    expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-03');
+    await _skip(t);
+    await _settle(t);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.byType(GameScreen), findsNothing);
+    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(services.progress.progressOf('1-03').completed, isTrue);
+    await t.binding.handlePopRoute();
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('Chapter 1'), findsNothing);
+    expect(find.text('Play'), findsOneWidget);
   });
 }
