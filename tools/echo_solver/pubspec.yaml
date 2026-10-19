@@ -3,7 +3,7 @@ description: Iterative-deepening solver and replay checker for Echo levels.
 publish_to: none
 
 environment:
-  sdk: ^3.5.0
+  sdk: ^3.11.0
 
 dependencies:
   echo_core:

@@ -22,12 +22,13 @@ Future<int> runCli(List<String> args, {StringSink? out}) async {
     return 64;
   }
 
-  final files = options.dir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.json'))
-      .toList()
-    ..sort((a, b) => _baseName(a).compareTo(_baseName(b)));
+  final files =
+      options.dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.json'))
+          .toList()
+        ..sort((a, b) => _baseName(a).compareTo(_baseName(b)));
 
   var failed = false;
   for (final file in files) {
@@ -112,10 +113,11 @@ String _process(File file, _Options options) {
         final map = jsonDecode(text) as Map<String, dynamic>;
         map['bestScore'] = bestScore;
         map['solution'] = [
-          for (final run in solution) [for (final m in run) m.code]
+          for (final run in solution) [for (final m in run) m.code],
         ];
         file.writeAsStringSync(
-            '${const JsonEncoder.withIndent('  ').convert(map)}\n');
+          '${const JsonEncoder.withIndent('  ').convert(map)}\n',
+        );
         return 'OK (best $bestScore)';
       }
       final stored = level.bestScore;

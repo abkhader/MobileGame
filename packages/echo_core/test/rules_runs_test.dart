@@ -11,7 +11,7 @@ void main() {
     final s = play(GameState.initial(lvl(G, runLimit: 2)), 'L|');
     expect((s.runIndex, s.tick, s.completedTicks), (1, 0, 1));
     expect(s.ghosts, [
-      [Move.left]
+      [Move.left],
     ]);
     expect(s.player, const Position(1, 0));
     expect(s.ghostPositions, [const Position(1, 0)]);
@@ -50,16 +50,18 @@ void main() {
     expect(s.status, GameStatus.lost);
     expect(s.score, 25);
   });
-  test('losing on a later run keeps earlier ghosts and counts every tick once',
-      () {
-    final s = play(GameState.initial(lvl(G, runLimit: 2)), 'L|WW|');
-    expect(s.status, GameStatus.lost);
-    expect(s.score, 3);
-    expect(s.ghosts, [
-      [Move.left]
-    ]);
-    expect(s.ghostPositions.length, 1);
-  });
+  test(
+    'losing on a later run keeps earlier ghosts and counts every tick once',
+    () {
+      final s = play(GameState.initial(lvl(G, runLimit: 2)), 'L|WW|');
+      expect(s.status, GameStatus.lost);
+      expect(s.score, 3);
+      expect(s.ghosts, [
+        [Move.left],
+      ]);
+      expect(s.ghostPositions.length, 1);
+    },
+  );
   test('a ghost blocked mid-replay stays put', () {
     // b plate (1,0) opens door B (2,1); a plate (4,0) opens door A (0,0).
     // Run 1: L onto b, then blocked by closed A. Ghost 1 = LLLL.
@@ -68,8 +70,9 @@ void main() {
     // ghost 1 walks through A at tick 2 and leaves b, closing B. Ghost 2's
     // D at tick 3 is then blocked by closed B and it stays at (2,0).
     final s = play(
-        GameState.initial(lvl(['AbS.a', '##B##', '##.E#'], runLimit: 3)),
-        'LLLL|WWWD|RRWW');
+      GameState.initial(lvl(['AbS.a', '##B##', '##.E#'], runLimit: 3)),
+      'LLLL|WWWD|RRWW',
+    );
     expect(s.ghostPositions, [const Position(0, 0), const Position(2, 0)]);
     expect(s.openDoors, {const Position(0, 0)});
   });

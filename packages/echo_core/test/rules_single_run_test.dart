@@ -17,8 +17,7 @@ void main() {
     final s = play(GameState.initial(lvl(['SAE', 'a..'])), 'R');
     expect(s.player, const Position(0, 0));
   });
-  test(
-      'a door opens at the end of the tick its plate is pressed, '
+  test('a door opens at the end of the tick its plate is pressed, '
       'stays open while occupied, and the player wins on the exit', () {
     var s = play(GameState.initial(lvl(['SaAE'])), 'R');
     expect(s.openDoors, {const Position(2, 0)});

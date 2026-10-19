@@ -21,23 +21,23 @@ class GameState {
     required Set<Position> openDoors,
     required this.completedTicks,
     required this.status,
-  })  : currentRun = List.unmodifiable(currentRun),
-        ghosts = List.unmodifiable(ghosts.map(List<Move>.unmodifiable)),
-        ghostPositions = List.unmodifiable(ghostPositions),
-        openDoors = Set.unmodifiable(openDoors);
+  }) : currentRun = List.unmodifiable(currentRun),
+       ghosts = List.unmodifiable(ghosts.map(List<Move>.unmodifiable)),
+       ghostPositions = List.unmodifiable(ghostPositions),
+       openDoors = Set.unmodifiable(openDoors);
 
   factory GameState.initial(Level level) => GameState(
-        level: level,
-        runIndex: 0,
-        tick: 0,
-        currentRun: const [],
-        ghosts: const [],
-        player: level.start,
-        ghostPositions: const [],
-        openDoors: const {},
-        completedTicks: 0,
-        status: GameStatus.playing,
-      );
+    level: level,
+    runIndex: 0,
+    tick: 0,
+    currentRun: const [],
+    ghosts: const [],
+    player: level.start,
+    ghostPositions: const [],
+    openDoors: const {},
+    completedTicks: 0,
+    status: GameStatus.playing,
+  );
 
   final Level level;
 
