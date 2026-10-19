@@ -34,4 +34,4 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
       - run: dart test
-      - run: dart run bin/echo_solver.dart ../../levels --check
+      - run: dart run bin/echo_solver.dart ../../app/assets/levels --check

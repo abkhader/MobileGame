@@ -3,7 +3,7 @@ description: Pure-Dart rules engine, level loader and solver for Echo.
 publish_to: none
 
 environment:
-  sdk: ^3.5.0
+  sdk: ^3.11.0
 
 dev_dependencies:
   lints: ^5.0.0
