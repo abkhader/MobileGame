@@ -8,19 +8,26 @@ import 'ad_service.dart';
 class AdMobAdService implements AdService {
   static const interstitialUnitId = 'ca-app-pub-3940256099942544/1033173712';
   static const rewardedUnitId = 'ca-app-pub-3940256099942544/5224354917';
+  static const _retryDelay = Duration(seconds: 30);
+  static const _interstitialTimeout = Duration(seconds: 30);
 
   InterstitialAd? _interstitial;
   RewardedAd? _rewarded;
   bool _ready = false;
+  bool _canRequestAds = false;
+  bool _loadingInterstitial = false;
+  bool _loadingRewarded = false;
 
   @override
   Future<void> initialize() async {
     try {
       await _resolveConsent();
     } catch (_) {
-      // Consent failed: ads may still load, non-personalized.
+      // Consent failed: whatever was gathered before still applies.
     }
     try {
+      _canRequestAds = await ConsentInformation.instance.canRequestAds();
+      if (!_canRequestAds) return;
       await MobileAds.instance.initialize();
       _ready = true;
       _loadInterstitial();
@@ -30,8 +37,7 @@ class AdMobAdService implements AdService {
     }
   }
 
-  /// Completes once consent is resolved. A failure still lets ads load
-  /// (they may be non-personalized).
+  /// Completes once the consent flow is resolved or has failed.
   Future<void> _resolveConsent() {
     final done = Completer<void>();
     void finish() {
@@ -46,26 +52,46 @@ class AdMobAdService implements AdService {
     return done.future;
   }
 
-  void _loadInterstitial() {
-    if (!_ready) return;
+  bool get _mayLoad => _ready && _canRequestAds;
+
+  void _loadInterstitial({bool isRetry = false}) {
+    if (!_mayLoad || _loadingInterstitial || _interstitial != null) return;
+    _loadingInterstitial = true;
     InterstitialAd.load(
       adUnitId: interstitialUnitId,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) => _interstitial = ad,
-        onAdFailedToLoad: (_) => _interstitial = null,
+        onAdLoaded: (ad) {
+          _loadingInterstitial = false;
+          _interstitial = ad;
+        },
+        onAdFailedToLoad: (_) {
+          _loadingInterstitial = false;
+          // Retry once; after that, the next show request starts a load.
+          if (!isRetry) {
+            Timer(_retryDelay, () => _loadInterstitial(isRetry: true));
+          }
+        },
       ),
     );
   }
 
-  void _loadRewarded() {
-    if (!_ready) return;
+  void _loadRewarded({bool isRetry = false}) {
+    if (!_mayLoad || _loadingRewarded || _rewarded != null) return;
+    _loadingRewarded = true;
     RewardedAd.load(
       adUnitId: rewardedUnitId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (ad) => _rewarded = ad,
-        onAdFailedToLoad: (_) => _rewarded = null,
+        onAdLoaded: (ad) {
+          _loadingRewarded = false;
+          _rewarded = ad;
+        },
+        onAdFailedToLoad: (_) {
+          _loadingRewarded = false;
+          // Retry once; after that, the next show request starts a load.
+          if (!isRetry) Timer(_retryDelay, () => _loadRewarded(isRetry: true));
+        },
       ),
     );
   }
@@ -73,52 +99,60 @@ class AdMobAdService implements AdService {
   @override
   Future<void> showInterstitialIfLoaded() async {
     final ad = _interstitial;
-    if (ad == null) return;
+    if (ad == null) {
+      _loadInterstitial();
+      return;
+    }
     _interstitial = null;
     final done = Completer<void>();
+    void finish() {
+      if (done.isCompleted) return;
+      ad.dispose();
+      _loadInterstitial();
+      done.complete();
+    }
+
     ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (_) {
-        ad.dispose();
-        _loadInterstitial();
-        if (!done.isCompleted) done.complete();
-      },
-      onAdFailedToShowFullScreenContent: (_, _) {
-        ad.dispose();
-        _loadInterstitial();
-        if (!done.isCompleted) done.complete();
-      },
+      onAdDismissedFullScreenContent: (_) => finish(),
+      onAdFailedToShowFullScreenContent: (_, _) => finish(),
     );
     try {
       await ad.show();
-      await done.future;
     } catch (_) {
-      ad.dispose();
-      _loadInterstitial();
+      return finish();
     }
+    // Never let Level Complete's buttons hang on a lost callback.
+    await done.future.timeout(_interstitialTimeout, onTimeout: () {});
   }
 
   @override
   Future<bool> showRewarded() async {
     final ad = _rewarded;
-    if (ad == null) return false;
+    if (ad == null) {
+      _loadRewarded();
+      return false;
+    }
     _rewarded = null;
     final done = Completer<bool>();
-    void finish(bool earned) {
-      if (!done.isCompleted) done.complete(earned);
+    var earned = false;
+    // Completes only once the ad has left the screen.
+    void finish(bool result) {
+      if (done.isCompleted) return;
+      ad.dispose();
+      _loadRewarded();
+      done.complete(result);
     }
 
     ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (_) => finish(false),
+      onAdDismissedFullScreenContent: (_) => finish(earned),
       onAdFailedToShowFullScreenContent: (_, _) => finish(false),
     );
     try {
-      await ad.show(onUserEarnedReward: (_, _) => finish(true));
-      return await done.future;
+      await ad.show(onUserEarnedReward: (_, _) => earned = true);
     } catch (_) {
+      finish(false);
       return false;
-    } finally {
-      ad.dispose();
-      _loadRewarded();
     }
+    return done.future;
   }
 }
