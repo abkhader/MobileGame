@@ -37,14 +37,17 @@ SolveResult solve(Level level, {int maxNodes = 5000000}) {
   final d0 = search.dist(level.start);
   if (d0 == _Search.unreachable) return const Unsolvable();
   try {
-    for (var bound = d0;
-        bound <= level.runLimit * Rules.maxTicksPerRun;
-        bound++) {
+    for (
+      var bound = d0;
+      bound <= level.runLimit * Rules.maxTicksPerRun;
+      bound++
+    ) {
       final win = search.run(bound);
       if (win != null) {
         if (win.score != bound) {
           throw StateError(
-              'solver invariant broken: score ${win.score} != bound $bound');
+            'solver invariant broken: score ${win.score} != bound $bound',
+          );
         }
         return Solved(win.score, [...win.ghosts, win.currentRun]);
       }

@@ -37,7 +37,8 @@ abstract final class LevelLoader {
     final runLimit = map['runLimit'];
     if (runLimit is! int || runLimit < 1 || runLimit > Level.maxRunLimit) {
       throw const LevelFormatException(
-          'runLimit must be an integer from 1 to ${Level.maxRunLimit}');
+        'runLimit must be an integer from 1 to ${Level.maxRunLimit}',
+      );
     }
 
     final tip = map['tip'];
@@ -79,7 +80,8 @@ abstract final class LevelLoader {
             if (code >= 0x61 && code <= 0x68) {
               if (plates.containsKey(ch)) {
                 throw LevelFormatException(
-                    "plate '$ch' appears more than once");
+                  "plate '$ch' appears more than once",
+                );
               }
               plates[ch] = p;
               row.add(Tile(TileKind.plate, channel: ch));
@@ -104,7 +106,8 @@ abstract final class LevelLoader {
     for (final channel in doors.keys) {
       if (!plates.containsKey(channel)) {
         throw LevelFormatException(
-            "door '${channel.toUpperCase()}' has no matching plate '$channel'");
+          "door '${channel.toUpperCase()}' has no matching plate '$channel'",
+        );
       }
     }
 
@@ -134,7 +137,8 @@ abstract final class LevelLoader {
   static List<String> _rows(Object? raw) {
     if (raw is! List || raw.isEmpty || raw.any((r) => r is! String)) {
       throw const LevelFormatException(
-          'grid must be a non-empty list of strings');
+        'grid must be a non-empty list of strings',
+      );
     }
     final rows = raw.cast<String>();
     if (rows.any((r) => r.length != rows.first.length)) {
@@ -145,11 +149,13 @@ abstract final class LevelLoader {
     }
     if (rows.first.length > Level.maxWidth) {
       throw const LevelFormatException(
-          'grid must have at most ${Level.maxWidth} columns');
+        'grid must have at most ${Level.maxWidth} columns',
+      );
     }
     if (rows.length > Level.maxHeight) {
       throw const LevelFormatException(
-          'grid must have at most ${Level.maxHeight} rows');
+        'grid must have at most ${Level.maxHeight} rows',
+      );
     }
     return rows;
   }

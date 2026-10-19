@@ -16,14 +16,14 @@ class Level {
     this.tip,
     this.bestScore,
     List<List<Move>>? solution,
-  })  : _grid = List.unmodifiable(grid.map(List<Tile>.unmodifiable)),
-        plates = Map.unmodifiable(plates),
-        doors = Map.unmodifiable(
-          doors.map((k, v) => MapEntry(k, List<Position>.unmodifiable(v))),
-        ),
-        solution = solution == null
-            ? null
-            : List.unmodifiable(solution.map(List<Move>.unmodifiable));
+  }) : _grid = List.unmodifiable(grid.map(List<Tile>.unmodifiable)),
+       plates = Map.unmodifiable(plates),
+       doors = Map.unmodifiable(
+         doors.map((k, v) => MapEntry(k, List<Position>.unmodifiable(v))),
+       ),
+       solution = solution == null
+           ? null
+           : List.unmodifiable(solution.map(List<Move>.unmodifiable));
 
   static const maxWidth = 8, maxHeight = 10, maxRunLimit = 4;
 

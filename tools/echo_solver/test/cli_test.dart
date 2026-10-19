@@ -16,9 +16,12 @@ void main() {
   void put(String file, Map<String, Object?> level) =>
       File('${dir.path}/$file').writeAsStringSync(jsonEncode(level));
 
-  Map<String, Object?> level(String id, List<String> grid, int runs,
-          [Map<String, Object?> extra = const {}]) =>
-      {'id': id, 'name': 'T', 'runLimit': runs, 'grid': grid, ...extra};
+  Map<String, Object?> level(
+    String id,
+    List<String> grid,
+    int runs, [
+    Map<String, Object?> extra = const {},
+  ]) => {'id': id, 'name': 'T', 'runLimit': runs, 'grid': grid, ...extra};
 
   Future<(int, String)> run(List<String> args) async {
     final out = StringBuffer();
@@ -35,10 +38,16 @@ void main() {
         jsonDecode(File('${dir.path}/1-01.json').readAsStringSync()) as Map;
     expect(written['bestScore'], 4);
     expect(written['solution'], [
-      ['R', 'R', 'R', 'R']
+      ['R', 'R', 'R', 'R'],
     ]);
-    expect(written.keys.toList(),
-        ['id', 'name', 'runLimit', 'grid', 'bestScore', 'solution']);
+    expect(written.keys.toList(), [
+      'id',
+      'name',
+      'runLimit',
+      'grid',
+      'bestScore',
+      'solution',
+    ]);
     expect(File('${dir.path}/1-01.json').readAsStringSync(), endsWith('}\n'));
     final (cCode, cOut) = await run(['--check']);
     expect(cCode, 0);
@@ -47,18 +56,20 @@ void main() {
 
   test('--check reports a wrong stored bestScore', () async {
     put(
-        '1-03.json',
-        level(
-            '1-03',
-            ['#######', '#Sa.AE#', '#######'],
-            2,
-            {
-              'bestScore': 9,
-              'solution': [
-                ['R', 'W'],
-                ['R', 'R', 'R']
-              ],
-            }));
+      '1-03.json',
+      level(
+        '1-03',
+        ['#######', '#Sa.AE#', '#######'],
+        2,
+        {
+          'bestScore': 9,
+          'solution': [
+            ['R', 'W'],
+            ['R', 'R', 'R'],
+          ],
+        },
+      ),
+    );
     final (code, out) = await run(['--check']);
     expect(code, 1);
     expect(out, contains('stored 9, computed 5'));
@@ -66,8 +77,10 @@ void main() {
 
   test('--check reports a missing bestScore and a missing solution', () async {
     put('a.json', level('a', ['#######', '#S...E#', '#######'], 1));
-    put('b.json',
-        level('b', ['#######', '#S...E#', '#######'], 1, {'bestScore': 4}));
+    put(
+      'b.json',
+      level('b', ['#######', '#S...E#', '#######'], 1, {'bestScore': 4}),
+    );
     final (code, out) = await run(['--check']);
     expect(code, 1);
     expect(out, contains('a.json: FAIL missing bestScore'));
@@ -76,17 +89,19 @@ void main() {
 
   test('--check reports a solution with the wrong score', () async {
     put(
-        'a.json',
-        level(
-            'a',
-            ['#######', '#S...E#', '#######'],
-            1,
-            {
-              'bestScore': 4,
-              'solution': [
-                ['R', 'R', 'R', 'W', 'R']
-              ],
-            }));
+      'a.json',
+      level(
+        'a',
+        ['#######', '#S...E#', '#######'],
+        1,
+        {
+          'bestScore': 4,
+          'solution': [
+            ['R', 'R', 'R', 'W', 'R'],
+          ],
+        },
+      ),
+    );
     final (code, out) = await run(['--check']);
     expect(code, 1);
     expect(out, contains('a.json: FAIL solution scores 5, expected 4'));
@@ -158,16 +173,26 @@ void main() {
 
     test('no mode flag', () => expectUsage([dir.path]));
     test(
-        'both mode flags', () => expectUsage([dir.path, '--check', '--write']));
+      'both mode flags',
+      () => expectUsage([dir.path, '--check', '--write']),
+    );
     test('no arguments', () => expectUsage([]));
-    test('missing directory',
-        () => expectUsage(['${dir.path}/nope', '--check']));
-    test('non-numeric max-nodes',
-        () => expectUsage([dir.path, '--check', '--max-nodes', 'x']));
-    test('zero max-nodes',
-        () => expectUsage([dir.path, '--check', '--max-nodes', '0']));
-    test('max-nodes without value',
-        () => expectUsage([dir.path, '--check', '--max-nodes']));
+    test(
+      'missing directory',
+      () => expectUsage(['${dir.path}/nope', '--check']),
+    );
+    test(
+      'non-numeric max-nodes',
+      () => expectUsage([dir.path, '--check', '--max-nodes', 'x']),
+    );
+    test(
+      'zero max-nodes',
+      () => expectUsage([dir.path, '--check', '--max-nodes', '0']),
+    );
+    test(
+      'max-nodes without value',
+      () => expectUsage([dir.path, '--check', '--max-nodes']),
+    );
     test('unknown flag', () => expectUsage([dir.path, '--check', '--nope']));
   });
 }

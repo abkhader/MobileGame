@@ -47,7 +47,8 @@ abstract final class Rules {
   static GameState endRun(GameState s) {
     if (s.status != GameStatus.playing) {
       throw StateError(
-          'Cannot end run: the level is already ${s.status.name}.');
+        'Cannot end run: the level is already ${s.status.name}.',
+      );
     }
     final level = s.level;
     if (s.runIndex == level.runLimit - 1) {
@@ -83,7 +84,11 @@ abstract final class Rules {
   }
 
   static Position _move(
-      Level level, Position from, Move m, Set<Position> openDoors) {
+    Level level,
+    Position from,
+    Move m,
+    Set<Position> openDoors,
+  ) {
     final target = from + m.delta;
     return _passable(level, target, openDoors) ? target : from;
   }

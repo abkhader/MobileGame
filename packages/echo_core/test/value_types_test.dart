@@ -15,11 +15,14 @@ void main() {
     expect(() => Move.fromCode('X'), throwsArgumentError);
   });
   test('tiles compare by kind and channel', () {
-    expect(const Tile(TileKind.door, channel: 'a'),
-        const Tile(TileKind.door, channel: 'a'));
     expect(
-        const Tile(TileKind.door, channel: 'a') ==
-            const Tile(TileKind.door, channel: 'b'),
-        isFalse);
+      const Tile(TileKind.door, channel: 'a'),
+      const Tile(TileKind.door, channel: 'a'),
+    );
+    expect(
+      const Tile(TileKind.door, channel: 'a') ==
+          const Tile(TileKind.door, channel: 'b'),
+      isFalse,
+    );
   });
 }
