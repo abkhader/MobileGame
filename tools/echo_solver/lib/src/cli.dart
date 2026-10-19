@@ -7,14 +7,23 @@ import 'replay.dart';
 import 'solver.dart';
 
 const _usage =
-    'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N]';
+    'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N] '
+    '[--report]';
+
+/// Allowed `runLimit` range (inclusive) per chapter.
+const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4)};
 
 /// Runs the solver CLI and returns the process exit code.
 ///
 /// `--check` verifies every `*.json` level in the directory; `--write` fills
 /// in `bestScore` and `solution` from the solver. Output goes to [out]
-/// (default [stdout]).
-Future<int> runCli(List<String> args, {StringSink? out}) async {
+/// (default [stdout]). [reducedMaxNodes] is test-only: it overrides the node
+/// budget of the "needs every run" proof.
+Future<int> runCli(
+  List<String> args, {
+  StringSink? out,
+  int? reducedMaxNodes,
+}) async {
   final sink = out ?? stdout;
   final options = _parseArgs(args);
   if (options == null) {
@@ -33,29 +42,56 @@ Future<int> runCli(List<String> args, {StringSink? out}) async {
   var failed = false;
   for (final file in files) {
     final name = _baseName(file);
-    final result = _process(file, options);
-    if (result.startsWith('OK')) {
-      sink.writeln('$name: $result');
+    final watch = Stopwatch()..start();
+    final result = _process(file, options, reducedMaxNodes);
+    watch.stop();
+    if (result.failure == null) {
+      sink.writeln('$name: OK (best ${result.best})');
+      if (options.report) {
+        sink.writeln(
+          '  runs ${result.runs}, best ${result.best}, nodes ${result.nodes}, '
+          '${watch.elapsedMilliseconds} ms',
+        );
+      }
     } else {
       failed = true;
-      sink.writeln('$name: FAIL $result');
+      sink.writeln('$name: FAIL ${result.failure}');
     }
   }
   return failed ? 1 : 0;
 }
 
 class _Options {
-  _Options(this.dir, {required this.write, required this.maxNodes});
+  _Options(
+    this.dir, {
+    required this.write,
+    required this.maxNodes,
+    required this.report,
+  });
 
   final Directory dir;
   final bool write;
   final int? maxNodes;
+  final bool report;
+}
+
+/// Outcome of processing one file: [failure] is null when every check passed.
+class _Outcome {
+  _Outcome.fail(this.failure) : best = 0, runs = 0, nodes = 0;
+  _Outcome.ok({required this.best, required this.runs, required this.nodes})
+    : failure = null;
+
+  final String? failure;
+  final int best;
+  final int runs;
+  final int nodes;
 }
 
 _Options? _parseArgs(List<String> args) {
   String? dir;
   bool? write;
   int? maxNodes;
+  var report = false;
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
     switch (arg) {
@@ -67,6 +103,9 @@ _Options? _parseArgs(List<String> args) {
         final n = int.tryParse(args[++i]);
         if (n == null || n < 1) return null;
         maxNodes = n;
+      case '--report':
+        if (report) return null;
+        report = true;
       default:
         if (arg.startsWith('--') || dir != null) return null;
         dir = arg;
@@ -75,29 +114,28 @@ _Options? _parseArgs(List<String> args) {
   if (dir == null || write == null) return null;
   final directory = Directory(dir);
   if (!directory.existsSync()) return null;
-  return _Options(directory, write: write, maxNodes: maxNodes);
+  return _Options(directory, write: write, maxNodes: maxNodes, report: report);
 }
 
 String _baseName(File file) => file.uri.pathSegments.last;
 
-/// Returns `OK (best N)` or the failure reason.
-String _process(File file, _Options options) {
+_Outcome _process(File file, _Options options, int? reducedMaxNodes) {
   final String text;
   try {
     text = file.readAsStringSync();
   } on FileSystemException {
-    return 'cannot read file';
+    return _Outcome.fail('cannot read file');
   }
   final Level level;
   try {
     level = LevelLoader.parse(text);
   } on LevelFormatException catch (e) {
-    return e.message;
+    return _Outcome.fail(e.message);
   }
 
   final name = _baseName(file);
   if ('${level.id}.json' != name) {
-    return "id '${level.id}' does not match file name";
+    return _Outcome.fail("id '${level.id}' does not match file name");
   }
 
   final result = options.maxNodes == null
@@ -105,10 +143,10 @@ String _process(File file, _Options options) {
       : solve(level, maxNodes: options.maxNodes!);
   switch (result) {
     case Unsolvable():
-      return 'unsolvable';
+      return _Outcome.fail('unsolvable');
     case BudgetExceeded():
-      return 'budget exceeded';
-    case Solved(:final bestScore, :final solution):
+      return _Outcome.fail('budget exceeded');
+    case Solved(:final bestScore, :final solution, :final nodes):
       if (options.write) {
         final map = jsonDecode(text) as Map<String, dynamic>;
         map['bestScore'] = bestScore;
@@ -118,19 +156,65 @@ String _process(File file, _Options options) {
         file.writeAsStringSync(
           '${const JsonEncoder.withIndent('  ').convert(map)}\n',
         );
-        return 'OK (best $bestScore)';
+      } else {
+        final stored = level.bestScore;
+        if (stored == null) return _Outcome.fail('missing bestScore');
+        if (stored != bestScore) {
+          return _Outcome.fail('stored $stored, computed $bestScore');
+        }
+        final stack = level.solution;
+        if (stack == null) return _Outcome.fail('missing solution');
+        final score = replayScore(level, stack);
+        if (score != bestScore) {
+          return _Outcome.fail(
+            'solution scores ${score ?? 'none'}, expected $bestScore',
+          );
+        }
       }
-      final stored = level.bestScore;
-      if (stored == null) return 'missing bestScore';
-      if (stored != bestScore) {
-        return 'stored $stored, computed $bestScore';
-      }
-      final stack = level.solution;
-      if (stack == null) return 'missing solution';
-      final score = replayScore(level, stack);
-      if (score != bestScore) {
-        return 'solution scores ${score ?? 'none'}, expected $bestScore';
-      }
-      return 'OK (best $bestScore)';
+      final quality = _qualityFailure(
+        level,
+        jsonDecode(text) as Map<String, dynamic>,
+        options.maxNodes,
+        reducedMaxNodes,
+      );
+      if (quality != null) return _Outcome.fail(quality);
+      return _Outcome.ok(best: bestScore, runs: level.runLimit, nodes: nodes);
   }
+}
+
+/// Chapter run range, then the proof that `runLimit - 1` runs do not suffice.
+String? _qualityFailure(
+  Level level,
+  Map<String, dynamic> map,
+  int? maxNodes,
+  int? reducedMaxNodes,
+) {
+  final runs = level.runLimit;
+  final chapter = level.id.split('-').first;
+  final range = _chapterRanges[chapter];
+  if (range != null) {
+    final (lo, hi) = range;
+    if (runs < lo || runs > hi) {
+      return 'runLimit $runs outside chapter $chapter range $lo\u2013$hi';
+    }
+  }
+  if (runs > 1) {
+    final reduced = LevelLoader.fromMap(
+      {...map, 'runLimit': runs - 1}
+        ..remove('bestScore')
+        ..remove('solution'),
+    );
+    final budget = reducedMaxNodes ?? maxNodes;
+    switch (budget == null
+        ? solve(reduced)
+        : solve(reduced, maxNodes: budget)) {
+      case Solved(:final bestScore):
+        return 'solvable with ${runs - 1} runs (best $bestScore)';
+      case BudgetExceeded():
+        return 'cannot prove $runs runs are needed (budget exceeded)';
+      case Unsolvable():
+        break;
+    }
+  }
+  return null;
 }

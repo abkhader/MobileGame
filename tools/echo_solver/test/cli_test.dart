@@ -5,7 +5,8 @@ import 'package:echo_solver/src/cli.dart';
 import 'package:test/test.dart';
 
 const _usage =
-    'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N]';
+    'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N] '
+    '[--report]';
 
 void main() {
   late Directory dir;
@@ -164,6 +165,73 @@ void main() {
     expect(out, isEmpty);
   });
 
+  group('level quality checks', () {
+    const echoGrid = ['#######', '#Sa.AE#', '#######'];
+
+    test('1-03 with 2 runs passes and needs both runs', () async {
+      put('1-03.json', level('1-03', echoGrid, 2));
+      final (wCode, wOut) = await run(['--write']);
+      expect(wCode, 0);
+      expect(wOut, '1-03.json: OK (best 5)\n');
+      final (cCode, cOut) = await run(['--check']);
+      expect(cCode, 0);
+      expect(cOut, '1-03.json: OK (best 5)\n');
+    });
+
+    test('a level solvable with one run fewer fails', () async {
+      put('2-09.json', level('2-09', echoGrid, 3));
+      final (wCode, wOut) = await run(['--write']);
+      expect(wCode, 1);
+      expect(wOut, '2-09.json: FAIL solvable with 2 runs (best 5)\n');
+      final written =
+          jsonDecode(File('${dir.path}/2-09.json').readAsStringSync()) as Map;
+      expect(written['bestScore'], 5);
+      final (cCode, cOut) = await run(['--check']);
+      expect(cCode, 1);
+      expect(cOut, '2-09.json: FAIL solvable with 2 runs (best 5)\n');
+    });
+
+    test('runLimit outside the chapter range fails', () async {
+      put('2-01.json', level('2-01', ['#######', '#S...E#', '#######'], 1));
+      final (code, out) = await run(['--write']);
+      expect(code, 1);
+      expect(
+        out,
+        '2-01.json: FAIL runLimit 1 outside chapter 2 range 2\u20133\n',
+      );
+    });
+
+    test('ids without a known chapter skip the range check', () async {
+      put('a.json', level('a', ['#######', '#S...E#', '#######'], 1));
+      final (code, _) = await run(['--write']);
+      expect(code, 0);
+    });
+
+    test('a reduced solve that exceeds the budget fails', () async {
+      put('1-03.json', level('1-03', echoGrid, 2));
+      final (code, out) = await run(['--write', '--max-nodes', '50']);
+      expect(code, 1);
+      expect(
+        out,
+        '1-03.json: FAIL cannot prove 2 runs are needed (budget exceeded)\n',
+      );
+    });
+
+    test('--report prints difficulty after the OK line', () async {
+      put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
+      await run(['--write']);
+      final (code, out) = await run(['--check', '--report']);
+      expect(code, 0);
+      final lines = out.trimRight().split('\n');
+      expect(lines, hasLength(2));
+      expect(lines[0], '1-01.json: OK (best 4)');
+      expect(
+        lines[1],
+        matches(RegExp(r'^  runs 1, best 4, nodes \d+, \d+ ms$')),
+      );
+    });
+  });
+
   group('bad arguments exit 64 with the usage line', () {
     Future<void> expectUsage(List<String> args) async {
       final out = StringBuffer();
@@ -192,6 +260,11 @@ void main() {
     test(
       'max-nodes without value',
       () => expectUsage([dir.path, '--check', '--max-nodes']),
+    );
+    test('--report without a mode', () => expectUsage([dir.path, '--report']));
+    test(
+      'repeated --report',
+      () => expectUsage([dir.path, '--check', '--report', '--report']),
     );
     test('unknown flag', () => expectUsage([dir.path, '--check', '--nope']));
   });
