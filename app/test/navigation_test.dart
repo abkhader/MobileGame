@@ -25,6 +25,10 @@ Future<AppServices> _services(WidgetTester t) async {
   );
 }
 
+/// The bundled level ids, in order, from a fresh asset bundle.
+Future<List<String>> _levelIds(WidgetTester t) async =>
+    (await t.runAsync(LevelRepository(PlatformAssetBundle()).levelIds))!;
+
 Future<void> _pumpHome(WidgetTester t, AppServices services) async {
   await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
 }
@@ -94,11 +98,13 @@ void main() {
     t,
   ) async {
     final services = await _services(t);
+    final ids = await _levelIds(t);
     await _pumpHome(t, services);
     await _openLevelSelect(t);
     expect(find.text('Chapter 1'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
-    expect(find.byIcon(Icons.lock), findsNWidgets(2));
+    // Every level except the first is locked.
+    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 1));
     expect(find.text('2'), findsNothing);
     expect(find.text('3'), findsNothing);
   });
@@ -146,9 +152,10 @@ void main() {
 
   testWidgets('Next opens level 2; Level Select shows progress', (t) async {
     final services = await _services(t);
+    final ids = await _levelIds(t);
     await _pumpHome(t, services);
     await _openLevelSelect(t);
-    expect(find.byIcon(Icons.lock), findsNWidgets(2));
+    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 1));
     await _tapAndPump(t, find.text('1'));
     await _winLevel1(t);
     await _tapAndPump(t, find.text('Next'));
@@ -161,12 +168,14 @@ void main() {
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('Chapter 1'), findsOneWidget);
-    expect(find.byIcon(Icons.lock), findsOneWidget);
+    // Winning level 1 unlocked level 2: one lock fewer.
+    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 2));
     expect(find.byIcon(Icons.star), findsNWidgets(3));
   });
 
   testWidgets('Levels after a Next chain shows the latest progress', (t) async {
     final services = await _services(t);
+    final ids = await _levelIds(t);
     await _pumpHome(t, services);
     await _openLevelSelect(t);
     await _tapAndPump(t, find.text('1'));
@@ -182,7 +191,9 @@ void main() {
     expect(find.text('Level complete'), findsOneWidget);
     await _tapAndPump(t, find.text('Levels'));
     expect(find.text('Chapter 1'), findsOneWidget);
-    expect(find.byIcon(Icons.lock), findsNothing);
+    // Levels 1-3 are unlocked after winning 1 and 2; the rest stay locked.
+    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 3));
+    expect(find.text('3'), findsOneWidget);
     expect(find.byIcon(Icons.star), findsNWidgets(6));
   });
 
@@ -234,11 +245,12 @@ void main() {
 
   testWidgets('the last level has no Next button', (t) async {
     final services = await _services(t);
+    final ids = await _levelIds(t);
     await t.pumpWidget(
       MaterialApp(
         home: LevelCompleteScreen(
           services: services,
-          levelId: '1-03',
+          levelId: ids.last,
           score: 5,
           best: 5,
           stars: 3,

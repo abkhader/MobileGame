@@ -215,26 +215,30 @@ void main() {
   ) async {
     final ads = FakeAdService();
     final services = await _services(t, ads);
+    final ids = (await t.runAsync(services.levels.levelIds))!;
+    final last = ids.last;
+    // Unlock the last level by completing every earlier one.
     await t.runAsync(() async {
-      await services.progress.recordCompletion('1-01', 3);
-      await services.progress.recordCompletion('1-02', 3);
+      for (final id in ids.take(ids.length - 1)) {
+        await services.progress.recordCompletion(id, 3);
+      }
     });
     await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
     await t.tap(find.text('Play'));
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);
-    await t.tap(find.text('3'));
+    await t.tap(find.text('${levelNumber(ids, last)}'));
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);
-    expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-03');
+    expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, last);
     await _skip(t);
     await _settle(t);
     await t.pump(const Duration(milliseconds: 500));
     expect(find.byType(GameScreen), findsNothing);
     expect(find.text('Chapter 1'), findsOneWidget);
-    expect(services.progress.progressOf('1-03').completed, isTrue);
+    expect(services.progress.progressOf(last).completed, isTrue);
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));

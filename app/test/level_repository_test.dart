@@ -30,7 +30,12 @@ void main() {
 
   test('levelIds lists bundled levels in order', () async {
     final ids = await LevelRepository(rootBundle).levelIds();
-    expect(ids, ['1-01', '1-02', '1-03']);
+    expect(ids.take(3), ['1-01', '1-02', '1-03']);
+    expect(ids, [...ids]..sort());
+    expect(ids.toSet().length, ids.length);
+    for (final id in ids) {
+      expect(id, matches(RegExp(r'^[1-3]-(0[1-9]|10)$')));
+    }
   });
 
   test('load parses a level', () async {
