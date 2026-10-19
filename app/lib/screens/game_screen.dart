@@ -8,7 +8,9 @@ import '../app_services.dart';
 import '../game/echo_board.dart';
 import '../game/game_controller.dart';
 import '../game/input.dart';
+import '../hints/hint_service.dart';
 import 'level_complete_screen.dart';
+import 'level_select_screen.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -33,6 +35,8 @@ class _GameScreenState extends State<GameScreen> {
   EchoBoard? _board;
   bool _failed = false;
   Timer? _winTimer;
+  bool _hintUnlocked = false;
+  bool _adBusy = false;
 
   @override
   void initState() {
@@ -70,7 +74,62 @@ class _GameScreenState extends State<GameScreen> {
       _winTimer?.cancel();
       _winTimer = null;
     }
+    _syncHint();
     setState(() {});
+  }
+
+  /// Points the board's hint dots at the current run of the best solution.
+  void _syncHint() {
+    final c = _controller;
+    final board = _board;
+    if (c == null || board == null) return;
+    board.hintPath = _hintUnlocked
+        ? HintService.pathFor(c.level, c.state.runIndex)
+        : null;
+  }
+
+  void _showNoAd() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('No ad available right now, try again later.'),
+        ),
+      );
+  }
+
+  Future<void> _onHint() async {
+    if (_adBusy) return;
+    _adBusy = true;
+    final rewarded = await widget.services.ads.showRewarded();
+    _adBusy = false;
+    if (!mounted) return;
+    if (!rewarded) return _showNoAd();
+    _hintUnlocked = true;
+    _syncHint();
+    setState(() {});
+  }
+
+  Future<void> _onSkip() async {
+    if (_adBusy) return;
+    _adBusy = true;
+    final services = widget.services;
+    final rewarded = await services.ads.showRewarded();
+    _adBusy = false;
+    if (!mounted) return;
+    if (!rewarded) return _showNoAd();
+    await services.progress.recordSkip(widget.levelId);
+    final ids = await services.levels.levelIds();
+    if (!mounted) return;
+    final i = ids.indexOf(widget.levelId);
+    final nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => nextId == null
+            ? LevelSelectScreen(services: services)
+            : GameScreen(services: services, levelId: nextId),
+      ),
+    );
   }
 
   Future<void> _defaultOnWon(GameController c) async {
@@ -107,7 +166,22 @@ class _GameScreenState extends State<GameScreen> {
   Widget build(BuildContext context) {
     final controller = _controller;
     return Scaffold(
-      appBar: AppBar(title: Text(controller?.level.name ?? '')),
+      appBar: AppBar(
+        title: Text(controller?.level.name ?? ''),
+        actions: [
+          PopupMenuButton<void>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More',
+            enabled: controller != null,
+            itemBuilder: (_) => [
+              PopupMenuItem<void>(
+                onTap: _onSkip,
+                child: const Text('Skip level'),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: SafeArea(
         child: _failed
             ? const _LoadErrorCard()
@@ -137,6 +211,15 @@ class _GameScreenState extends State<GameScreen> {
             ],
           ),
         ),
+        if (_hintUnlocked && !HintService.matchesSolution(c.level, state))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Hints follow the best solution. Restart the level to match them.',
+              textAlign: TextAlign.center,
+              style: textTheme.bodySmall,
+            ),
+          ),
         if (tip != null && tip.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -190,7 +273,7 @@ class _GameScreenState extends State<GameScreen> {
               _button(Icons.undo, 'Undo', c.canUndo ? c.undo : null),
               _button(Icons.flag, 'End run', c.canEndRun ? c.endRun : null),
               _button(Icons.replay, 'Restart', c.restart),
-              _button(Icons.lightbulb_outline, 'Hint', null),
+              _button(Icons.lightbulb_outline, 'Hint', _onHint),
             ],
           ),
         ),

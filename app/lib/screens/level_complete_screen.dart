@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
+import '../data/level_repository.dart';
 import 'game_screen.dart';
 
 class LevelCompleteScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class LevelCompleteScreen extends StatefulWidget {
 
 class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
   String? _nextId;
+  int _levelNumber = 0;
   bool _loaded = false;
 
   @override
@@ -38,6 +40,7 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
     final i = ids.indexOf(widget.levelId);
     if (!mounted) return;
     setState(() {
+      _levelNumber = levelNumber(ids, widget.levelId);
       _nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
       _loaded = true;
     });
@@ -49,6 +52,26 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
         builder: (_) => GameScreen(services: widget.services, levelId: id),
       ),
     );
+  }
+
+  /// Shows the between-levels interstitial when the policy asks for one.
+  Future<void> _maybeInterstitial() async {
+    final services = widget.services;
+    final show = services.adPolicy.shouldShowInterstitial(
+      completedThisSession: services.completedThisSession,
+      levelNumber: _levelNumber,
+    );
+    if (show) await services.ads.showInterstitialIfLoaded();
+  }
+
+  Future<void> _next(String id) async {
+    await _maybeInterstitial();
+    if (mounted) _openGame(id);
+  }
+
+  Future<void> _levels() async {
+    await _maybeInterstitial();
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -79,7 +102,7 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
             const SizedBox(height: 24),
             if (_loaded && _nextId != null) ...[
               FilledButton(
-                onPressed: () => _openGame(_nextId!),
+                onPressed: () => _next(_nextId!),
                 child: const Text('Next'),
               ),
               const SizedBox(height: 12),
@@ -89,10 +112,7 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
               child: const Text('Retry'),
             ),
             const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Levels'),
-            ),
+            OutlinedButton(onPressed: _levels, child: const Text('Levels')),
           ],
         ),
       ),

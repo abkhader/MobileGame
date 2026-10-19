@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/fake_ad_service.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -17,6 +19,7 @@ void main() {
         services: AppServices(
           levels: LevelRepository(rootBundle),
           progress: progress,
+          ads: FakeAdService(),
         ),
       ),
     );

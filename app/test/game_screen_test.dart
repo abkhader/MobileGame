@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/fake_ad_service.dart';
+
 /// Serves invalid JSON for every asset.
 class _BrokenBundle extends CachingAssetBundle {
   @override
@@ -28,6 +30,7 @@ Future<AppServices> _services(WidgetTester t, {AssetBundle? bundle}) async {
   return AppServices(
     levels: LevelRepository(bundle ?? PlatformAssetBundle()),
     progress: progress,
+    ads: FakeAdService(),
   );
 }
 
@@ -74,7 +77,7 @@ void main() {
     expect(_enabled(t, 'Undo'), isFalse);
     expect(_enabled(t, 'End run'), isFalse);
     expect(_enabled(t, 'Restart'), isTrue);
-    expect(_enabled(t, 'Hint'), isFalse);
+    expect(_enabled(t, 'Hint'), isTrue);
   });
 
   testWidgets('a swipe moves and enables undo and end run', (t) async {

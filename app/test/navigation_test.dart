@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/fake_ad_service.dart';
+
 const _frame = Duration(milliseconds: 200);
 final _board = find.byKey(const Key('board'));
 
@@ -19,6 +21,7 @@ Future<AppServices> _services(WidgetTester t) async {
   return AppServices(
     levels: LevelRepository(PlatformAssetBundle()),
     progress: progress,
+    ads: FakeAdService(),
   );
 }
 
@@ -114,7 +117,11 @@ void main() {
   testWidgets('Level complete waits for the save to finish', (t) async {
     final real = await _services(t);
     final gated = _GatedProgress(real.progress);
-    final services = AppServices(levels: real.levels, progress: gated);
+    final services = AppServices(
+      levels: real.levels,
+      progress: gated,
+      ads: real.ads,
+    );
     await _pumpHome(t, services);
     await _openLevelSelect(t);
     await _tapAndPump(t, find.text('1'));
