@@ -28,6 +28,24 @@ A three-plate, four-run 8×10 level exceeds the default 5M-node budget in 4 s.
 - **Level assets.** `levels/` sits at the repo root; Flutter assets usually live inside the app package. Decide how the app bundles them, and add a level manifest for ordering.
 - **SDK floor.** When the Flutter SDK is pinned, raise `environment: sdk` in both pubspecs to match (the lockfiles already need Dart ≥ 3.11).
 
+## From Plan 2 (the app): before real ad IDs or the first Play upload
+
+- **Privacy options.** Add a Settings entry that calls `ConsentForm.showPrivacyOptionsForm` when `getPrivacyOptionsRequirementStatus()` is `required`, and re-read `canRequestAds()` afterwards (it is read only once at start today).
+- **Error paths and telemetry, with Crashlytics.** These are swallowed or crash without a trace today:
+  - `LevelRepository.load` and the Game screen's load both use `catch (_)`.
+  - `SharedPreferences.getInstance()` sits outside the try in `ProgressRepository.open()`.
+  - A `recordCompletion` failure in the default `onWon` leaves the player on a won board.
+- **Signing.** Fail fast in CI when only some of the four signing secrets are set, log which key signed the artifact, and give a clear error when `key.properties` is missing a key.
+- **Stray overflow menu.** If the 400 ms win timer fires while the `⋮` menu is open, the menu stays over Level Complete, and tapping `Skip level` throws on a disposed State. Fix: `popUntil` this route before `replace`, or `if (!mounted) return;` at the top of `_onSkip`.
+- **Manual device check.** The real AdMob path (consent form, rewarded Hint and Skip, an interstitial after level 6 with 3 completions) has no automated coverage. Play-test it once with test ads on a phone.
+
+## From Plan 2: polish (any time)
+
+- Slow drags under 200 px/s are ignored; consider a displacement fallback.
+- Board: doors snap instead of sliding (spec 4.1), door bars are always vertical, the trail shows 3 dots instead of 4, undo leaves a ghost dot behind, and `super.render` runs before the background fill.
+- An undismissed interstitial isn't disposed after the 30 s timeout (small leak).
+- Web build placeholder branding (`echo_app`, default colours); the AAB isn't verified in CI; `find.text('1')` in the integration test is brittle.
+
 ## Small cleanups (any time)
 
 - Reject a non-empty `links` field in `LevelLoader` (reserved, empty at launch).
