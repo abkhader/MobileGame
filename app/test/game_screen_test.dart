@@ -123,6 +123,16 @@ void main() {
     expect(find.text('Moves 0'), findsOneWidget);
   });
 
+  testWidgets('Hint is disabled once the level is lost', (t) async {
+    await _pumpGame(t, '1-01');
+    await t.tap(_board);
+    await t.pump(_frame);
+    await t.tap(find.text('End run'));
+    await t.pump(_frame);
+    expect(find.text('Out of runs'), findsOneWidget);
+    expect(_enabled(t, 'Hint'), isFalse);
+  });
+
   testWidgets('system back pops to the previous route', (t) async {
     final services = await _services(t);
     final navigator = GlobalKey<NavigatorState>();

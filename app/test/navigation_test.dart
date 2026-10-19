@@ -54,7 +54,7 @@ Future<void> _winLevel1(WidgetTester t) async {
 }
 
 /// Delegates to a real repository but holds recordCompletion on [gate].
-class _GatedProgress implements ProgressRepository {
+class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   _GatedProgress(this._inner);
 
   final ProgressRepository _inner;
@@ -66,6 +66,10 @@ class _GatedProgress implements ProgressRepository {
     await _inner.recordCompletion(id, stars);
   }
 
+  @override
+  void addListener(VoidCallback listener) => _inner.addListener(listener);
+  @override
+  void removeListener(VoidCallback listener) => _inner.removeListener(listener);
   @override
   LevelProgress progressOf(String id) => _inner.progressOf(id);
   @override
@@ -159,6 +163,49 @@ void main() {
     expect(find.text('Chapter 1'), findsOneWidget);
     expect(find.byIcon(Icons.lock), findsOneWidget);
     expect(find.byIcon(Icons.star), findsNWidgets(3));
+  });
+
+  testWidgets('Levels after a Next chain shows the latest progress', (t) async {
+    final services = await _services(t);
+    await _pumpHome(t, services);
+    await _openLevelSelect(t);
+    await _tapAndPump(t, find.text('1'));
+    await _winLevel1(t);
+    await _tapAndPump(t, find.text('Next'));
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await t.pump(_frame);
+    expect(find.text('Run 1 / 1'), findsOneWidget);
+    // Level 1-02 is also won by four moves right.
+    await _winLevel1(t);
+    expect(find.text('Level complete'), findsOneWidget);
+    await _tapAndPump(t, find.text('Levels'));
+    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(find.byIcon(Icons.lock), findsNothing);
+    expect(find.byIcon(Icons.star), findsNWidgets(6));
+  });
+
+  testWidgets('a win with the overflow menu open replaces the game route', (
+    t,
+  ) async {
+    final services = await _services(t);
+    await _pumpHome(t, services);
+    await _openLevelSelect(t);
+    await _tapAndPump(t, find.text('1'));
+    for (var i = 0; i < 4; i++) {
+      await t.fling(_board, const Offset(300, 0), 1000);
+      await t.pump(const Duration(milliseconds: 50));
+    }
+    // Open the menu before the 400 ms win delay fires.
+    await t.tap(find.byIcon(Icons.more_vert));
+    await t.pump(_frame);
+    expect(find.text('Skip level'), findsOneWidget);
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('Level complete'), findsOneWidget);
+    // The game route itself was replaced, not the menu above it.
+    expect(find.text('Moves 4', skipOffstage: false), findsNothing);
   });
 
   testWidgets('Retry reopens the same level at Moves 0', (t) async {

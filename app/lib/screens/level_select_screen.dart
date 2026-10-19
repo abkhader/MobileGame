@@ -27,13 +27,12 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     if (mounted) setState(() => _ids = ids);
   }
 
-  Future<void> _open(String id) async {
-    await Navigator.of(context).push(
+  void _open(String id) {
+    Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => GameScreen(services: widget.services, levelId: id),
       ),
     );
-    if (mounted) setState(() {});
   }
 
   @override
@@ -43,7 +42,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
       appBar: AppBar(title: const Text('Levels')),
       body: ids == null
           ? const Center(child: CircularProgressIndicator())
-          : _buildChapters(context, ids),
+          : ListenableBuilder(
+              listenable: widget.services.progress,
+              builder: (context, _) => _buildChapters(context, ids),
+            ),
     );
   }
 

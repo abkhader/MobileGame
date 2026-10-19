@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LevelProgress {
@@ -10,7 +11,8 @@ class LevelProgress {
 }
 
 /// Stars, unlocks and settings, persisted as one JSON string.
-class ProgressRepository {
+/// Notifies listeners after each successful save.
+class ProgressRepository extends ChangeNotifier {
   ProgressRepository._(this._prefs, this._stars, this._musicOn, this._sfxOn);
 
   static const storageKey = 'echo.progress.v1';
@@ -100,5 +102,6 @@ class ProgressRepository {
       'sfxOn': _sfxOn,
     });
     await _prefs.setString(storageKey, json);
+    notifyListeners();
   }
 }

@@ -117,6 +117,8 @@ class _GameScreenState extends State<GameScreen> {
     _adBusy = true;
     try {
       final services = widget.services;
+      // Replace this route explicitly: a menu may sit above it.
+      final route = ModalRoute.of(context)!;
       final rewarded = await services.ads.showRewarded();
       if (!mounted) return;
       if (!rewarded) return _showNoAd();
@@ -127,11 +129,12 @@ class _GameScreenState extends State<GameScreen> {
       final nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
       final navigator = Navigator.of(context);
       if (nextId == null) {
-        // Back to the Level Select underneath, which refreshes on return.
+        // Back to the Level Select underneath.
         navigator.pop();
       } else {
-        await navigator.pushReplacement(
-          MaterialPageRoute<void>(
+        navigator.replace(
+          oldRoute: route,
+          newRoute: MaterialPageRoute<void>(
             builder: (_) => GameScreen(services: services, levelId: nextId),
           ),
         );
@@ -148,11 +151,15 @@ class _GameScreenState extends State<GameScreen> {
     final score = c.state.score;
     final stars = c.stars!;
     final best = c.level.bestScore ?? score;
+    // Replace this route explicitly: a menu may sit above it.
+    final route = ModalRoute.of(context)!;
+    final navigator = Navigator.of(context);
     await services.progress.recordCompletion(levelId, stars);
     services.completedThisSession++;
     if (!mounted) return;
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+    navigator.replace(
+      oldRoute: route,
+      newRoute: MaterialPageRoute<void>(
         builder: (_) => LevelCompleteScreen(
           services: services,
           levelId: levelId,
@@ -184,6 +191,7 @@ class _GameScreenState extends State<GameScreen> {
             enabled: controller != null,
             itemBuilder: (_) => [
               PopupMenuItem<void>(
+                enabled: controller?.state.status == GameStatus.playing,
                 onTap: _onSkip,
                 child: const Text('Skip level'),
               ),
@@ -282,7 +290,11 @@ class _GameScreenState extends State<GameScreen> {
               _button(Icons.undo, 'Undo', c.canUndo ? c.undo : null),
               _button(Icons.flag, 'End run', c.canEndRun ? c.endRun : null),
               _button(Icons.replay, 'Restart', c.restart),
-              _button(Icons.lightbulb_outline, 'Hint', _onHint),
+              _button(
+                Icons.lightbulb_outline,
+                'Hint',
+                state.status == GameStatus.playing ? _onHint : null,
+              ),
             ],
           ),
         ),
