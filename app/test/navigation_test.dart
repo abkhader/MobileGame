@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:echo_app/app_services.dart';
+import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/screens/home_screen.dart';
@@ -22,6 +23,7 @@ Future<AppServices> _services(WidgetTester t) async {
     levels: LevelRepository(PlatformAssetBundle()),
     progress: progress,
     ads: FakeAdService(),
+    audio: const SilentAudioService(),
   );
 }
 
@@ -140,6 +142,7 @@ void main() {
       levels: real.levels,
       progress: gated,
       ads: real.ads,
+      audio: real.audio,
     );
     await _pumpHome(t, services);
     await _openLevelSelect(t);

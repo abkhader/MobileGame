@@ -1,5 +1,6 @@
 import 'package:echo_app/ads/ad_service.dart';
 import 'package:echo_app/app_services.dart';
+import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/game/echo_board.dart';
@@ -45,6 +46,7 @@ Future<AppServices> _services(
     levels: LevelRepository(PlatformAssetBundle()),
     progress: progress,
     ads: ads,
+    audio: const SilentAudioService(),
     adPolicy: policy,
   );
 }

@@ -5,6 +5,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
+import '../audio/game_sounds.dart';
 import '../game/echo_board.dart';
 import '../game/game_controller.dart';
 import '../game/input.dart';
@@ -31,6 +32,7 @@ class _GameScreenState extends State<GameScreen> {
   static const _winDelay = Duration(milliseconds: 400);
 
   GameController? _controller;
+  GameState? _lastState;
   EchoBoard? _board;
   bool _failed = false;
   Timer? _winTimer;
@@ -48,6 +50,7 @@ class _GameScreenState extends State<GameScreen> {
       final level = await widget.services.levels.load(widget.levelId);
       if (!mounted) return;
       final controller = GameController(level)..addListener(_onChanged);
+      _lastState = controller.state;
       setState(() {
         _controller = controller;
         _board = EchoBoard(controller);
@@ -59,6 +62,7 @@ class _GameScreenState extends State<GameScreen> {
 
   void _onChanged() {
     final c = _controller!;
+    _playSounds(c);
     if (c.lastEvent == GameEvent.won && _winTimer == null) {
       _winTimer = Timer(_winDelay, () {
         if (!mounted) return;
@@ -75,6 +79,16 @@ class _GameScreenState extends State<GameScreen> {
     }
     _syncHint();
     setState(() {});
+  }
+
+  void _playSounds(GameController c) {
+    final before = _lastState!;
+    _lastState = c.state;
+    final services = widget.services;
+    if (!services.progress.sfxOn) return;
+    for (final sfx in soundsFor(before, c.state, c.lastEvent)) {
+      unawaited(services.audio.playSfx(sfx).catchError((_) {}));
+    }
   }
 
   /// Points the board's hint dots at the current run of the best solution.

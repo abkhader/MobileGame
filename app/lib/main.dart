@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import 'ads/ad_service_factory.dart';
 import 'app.dart';
+import 'audio/flame_audio_service.dart';
 import 'app_services.dart';
 import 'data/level_repository.dart';
 import 'data/progress_repository.dart';
@@ -20,6 +21,7 @@ Future<void> main() async {
         levels: LevelRepository(rootBundle),
         progress: progress,
         ads: ads,
+        audio: FlameAudioService(),
       ),
     ),
   );

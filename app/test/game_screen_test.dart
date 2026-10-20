@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:echo_app/app_services.dart';
+import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/game/game_controller.dart';
@@ -31,6 +32,7 @@ Future<AppServices> _services(WidgetTester t, {AssetBundle? bundle}) async {
     levels: LevelRepository(bundle ?? PlatformAssetBundle()),
     progress: progress,
     ads: FakeAdService(),
+    audio: const SilentAudioService(),
   );
 }
 
