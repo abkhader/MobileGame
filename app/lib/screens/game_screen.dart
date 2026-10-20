@@ -39,6 +39,9 @@ class _GameScreenState extends State<GameScreen> {
   bool _hintUnlocked = false;
   bool _adBusy = false;
 
+  @visibleForTesting
+  GameController? get controllerForTesting => _controller;
+
   @override
   void initState() {
     super.initState();
@@ -131,6 +134,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _onSkip() async {
+    if (!mounted) return;
     if (_adBusy) return;
     _adBusy = true;
     try {
@@ -175,6 +179,8 @@ class _GameScreenState extends State<GameScreen> {
     await services.progress.recordCompletion(levelId, stars);
     services.completedThisSession++;
     if (!mounted) return;
+    // Close any open menu or dialog above this route first.
+    navigator.popUntil((r) => r == route);
     navigator.replace(
       oldRoute: route,
       newRoute: MaterialPageRoute<void>(

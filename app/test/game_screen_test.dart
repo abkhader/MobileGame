@@ -4,6 +4,7 @@ import 'package:echo_app/app_services.dart';
 import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
+import 'package:echo_core/echo_core.dart';
 import 'package:echo_app/game/game_controller.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:flutter/material.dart';
@@ -197,5 +198,28 @@ void main() {
     expect(won.single.state.tick, 4);
     await t.pump(const Duration(milliseconds: 500));
     expect(won, hasLength(1));
+  });
+
+  testWidgets('winning while the menu is open closes it', (t) async {
+    await _pumpGame(t, '1-01');
+    for (var i = 0; i < 3; i++) {
+      await _flingRight(t);
+      await t.pump(_frame);
+    }
+    await t.tap(find.byTooltip('More'));
+    await t.pump(_frame);
+    await t.pump(_frame);
+    expect(find.text('Skip level'), findsOneWidget);
+    // The menu barrier blocks the board: make the winning move directly.
+    final state = t.state(find.byType(GameScreen)) as dynamic;
+    (state.controllerForTesting as GameController).move(Move.right);
+    await t.pump(const Duration(milliseconds: 600));
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await t.pump(_frame);
+    await t.pump(_frame);
+    expect(find.text('Level complete'), findsOneWidget);
+    expect(find.text('Skip level'), findsNothing);
   });
 }
