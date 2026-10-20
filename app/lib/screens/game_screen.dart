@@ -42,6 +42,10 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
+    // Retry music here: a browser may have blocked the earlier autoplay.
+    if (widget.services.progress.musicOn) {
+      unawaited(widget.services.audio.startMusic().catchError((_) {}));
+    }
     _load();
   }
 

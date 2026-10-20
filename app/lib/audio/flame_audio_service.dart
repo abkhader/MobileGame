@@ -14,35 +14,47 @@ class FlameAudioService implements AudioService {
     Sfx.win: 'win.wav',
   };
 
-  bool _preloaded = false;
+  Future<void>? _preload;
+  bool _bgmInitialized = false;
+  bool _wanted = false;
 
-  Future<void> _preload() async {
-    if (_preloaded) return;
-    _preloaded = true;
-    try {
-      await FlameAudio.audioCache.loadAll([..._files.values, 'ambient.wav']);
-    } catch (_) {}
+  /// One shared load; a failure clears it so the next call retries.
+  Future<void> _ensureLoaded() {
+    return _preload ??= FlameAudio.audioCache
+        .loadAll([..._files.values, 'ambient.wav'])
+        .then<void>((_) {})
+        .catchError((Object e) {
+          _preload = null;
+          throw e;
+        });
   }
 
   @override
   Future<void> playSfx(Sfx s) async {
     try {
-      await _preload();
+      await _ensureLoaded();
       await FlameAudio.play(_files[s]!);
     } catch (_) {}
   }
 
   @override
   Future<void> startMusic() async {
+    _wanted = true;
     try {
-      await _preload();
-      if (FlameAudio.bgm.isPlaying) return;
+      await _ensureLoaded();
+      if (!_bgmInitialized) {
+        await FlameAudio.bgm.initialize();
+        _bgmInitialized = true;
+      }
+      if (!_wanted || FlameAudio.bgm.isPlaying) return;
       await FlameAudio.bgm.play('ambient.wav', volume: 0.5);
+      if (!_wanted) await FlameAudio.bgm.stop();
     } catch (_) {}
   }
 
   @override
   Future<void> stopMusic() async {
+    _wanted = false;
     try {
       await FlameAudio.bgm.stop();
     } catch (_) {}

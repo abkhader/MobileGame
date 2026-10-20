@@ -94,6 +94,49 @@ void main() {
     expect(audio.startMusicCalls, 1);
   });
 
+  testWidgets('Home does not start music when musicOn is false', (t) async {
+    final audio = FakeAudioService();
+    final services = await _services(
+      t,
+      audio,
+      prefs: {ProgressRepository.storageKey: '{"musicOn":false}'},
+    );
+    await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
+    await t.pump(_frame);
+    await t.tap(find.text('Play'));
+    await t.pump(const Duration(milliseconds: 500));
+    expect(audio.startMusicCalls, 0);
+  });
+
+  testWidgets('opening a level retries startMusic when music is on', (t) async {
+    final audio = FakeAudioService();
+    await _pumpGame(t, await _services(t, audio));
+    expect(audio.startMusicCalls, 1);
+  });
+
+  testWidgets('with sfxOn false plate, door and win stay silent too', (
+    t,
+  ) async {
+    final audio = FakeAudioService();
+    final services = await _services(
+      t,
+      audio,
+      prefs: {ProgressRepository.storageKey: '{"sfxOn":false}'},
+    );
+    await t.pumpWidget(
+      MaterialApp(
+        home: GameScreen(services: services, levelId: '1-02', onWon: (_) {}),
+      ),
+    );
+    await t.pump(_frame);
+    await t.pump(_frame);
+    for (var i = 0; i < 4; i++) {
+      await _swipe(t);
+    }
+    expect(audio.played, isEmpty);
+    await t.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('a failing audio backend does not break Home', (t) async {
     final audio = FakeAudioService(throws: true);
     final services = await _services(t, audio);
