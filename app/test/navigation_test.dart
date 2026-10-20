@@ -33,6 +33,14 @@ Future<void> _pumpHome(WidgetTester t, AppServices services) async {
   await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
 }
 
+/// Makes the test view tall enough for Level Select to build every level
+/// tile, so lock icons can be counted across all chapters.
+void _showAllLevels(WidgetTester t) {
+  t.view.physicalSize = const Size(800, 4000);
+  t.view.devicePixelRatio = 1;
+  addTearDown(t.view.reset);
+}
+
 Future<void> _tapAndPump(WidgetTester t, Finder f) async {
   await t.tap(f);
   await t.pump(_frame);
@@ -97,6 +105,7 @@ void main() {
   testWidgets('Play shows Chapter 1 with level 1 unlocked, 2 and 3 locked', (
     t,
   ) async {
+    _showAllLevels(t);
     final services = await _services(t);
     final ids = await _levelIds(t);
     await _pumpHome(t, services);
@@ -151,6 +160,7 @@ void main() {
   });
 
   testWidgets('Next opens level 2; Level Select shows progress', (t) async {
+    _showAllLevels(t);
     final services = await _services(t);
     final ids = await _levelIds(t);
     await _pumpHome(t, services);
@@ -174,6 +184,7 @@ void main() {
   });
 
   testWidgets('Levels after a Next chain shows the latest progress', (t) async {
+    _showAllLevels(t);
     final services = await _services(t);
     final ids = await _levelIds(t);
     await _pumpHome(t, services);

@@ -228,8 +228,14 @@ void main() {
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);
-    // The last level's tile can sit below the 800x600 test viewport.
-    await t.ensureVisible(find.text('${levelNumber(ids, last)}'));
+    // The last level's tile can sit below the 800x600 test viewport, beyond
+    // what the lazy list has built, so scroll until it exists.
+    await t.scrollUntilVisible(
+      find.text('${levelNumber(ids, last)}'),
+      200,
+      // The outer level list; each chapter's grid is a Scrollable too.
+      scrollable: find.byType(Scrollable).first,
+    );
     await t.pump(_frame);
     await t.tap(find.text('${levelNumber(ids, last)}'));
     await t.pump(_frame);
