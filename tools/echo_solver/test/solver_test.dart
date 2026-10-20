@@ -10,6 +10,23 @@ import 'data/multirun_levels.dart';
 Level l(List<String> g, int runs) =>
     LevelLoader.fromMap({'id': 't', 'name': 't', 'runLimit': runs, 'grid': g});
 
+/// Checks that the joint solver agrees with the sequential reference on
+/// [level]: both Unsolvable, or the same best score with a joint solution
+/// that replays to it.
+void expectJointMatchesSequential(String label, Level level) {
+  final joint = solve(level);
+  final sequential = solveSequential(level);
+  if (sequential is Unsolvable) {
+    expect(joint, isA<Unsolvable>(), reason: label);
+    return;
+  }
+  expect(sequential, isA<Solved>(), reason: label);
+  expect(joint, isA<Solved>(), reason: label);
+  final best = (sequential as Solved).bestScore;
+  expect((joint as Solved).bestScore, best, reason: label);
+  expect(replayScore(level, joint.solution), best, reason: label);
+}
+
 void main() {
   test('corridor', () {
     final r = solve(l(['#######', '#S...E#', '#######'], 1)) as Solved;
@@ -35,6 +52,22 @@ void main() {
   });
   test('an unreachable exit is unsolvable', () {
     expect(solve(l(['S#E'], 4)), isA<Unsolvable>());
+  });
+  // Regression: an exit more than 26 steps from the start (doors as floor)
+  // indexed past the A* bucket list and threw a RangeError.
+  test('an exit beyond one run of moves is unsolvable, not a crash', () {
+    const grid = [
+      'S.......',
+      '#######.',
+      '........',
+      '.#######',
+      '........',
+      '#######.',
+      '#######E',
+    ];
+    for (final runs in [1, 3]) {
+      expect(solve(l(grid, runs)), isA<Unsolvable>(), reason: 'runs=$runs');
+    }
   });
   test('a tiny budget reports BudgetExceeded instead of searching on', () {
     expect(
@@ -120,17 +153,7 @@ void main() {
         ('${grid.join('/')} runs=$runs', l(grid, runs)),
     ];
     for (final (label, level) in levels) {
-      final joint = solve(level);
-      final sequential = solveSequential(level);
-      if (sequential is Unsolvable) {
-        expect(joint, isA<Unsolvable>(), reason: label);
-        continue;
-      }
-      expect(sequential, isA<Solved>(), reason: label);
-      expect(joint, isA<Solved>(), reason: label);
-      final best = (sequential as Solved).bestScore;
-      expect((joint as Solved).bestScore, best, reason: label);
-      expect(replayScore(level, joint.solution), best, reason: label);
+      expectJointMatchesSequential(label, level);
     }
   });
 
@@ -138,20 +161,16 @@ void main() {
   // 4-run path gets its own comparison against the sequential reference.
   test('joint solver matches the sequential solver with 4 runs', () {
     for (final (grid, _) in multiRunLevels.take(15)) {
-      final level = l(grid, 4);
-      final label = '${grid.join('/')} runs=4';
-      final joint = solve(level);
-      final sequential = solveSequential(level);
-      if (sequential is Unsolvable) {
-        expect(joint, isA<Unsolvable>(), reason: label);
-        continue;
-      }
-      expect(sequential, isA<Solved>(), reason: label);
-      expect(joint, isA<Solved>(), reason: label);
-      final best = (sequential as Solved).bestScore;
-      expect((joint as Solved).bestScore, best, reason: label);
-      expect(replayScore(level, joint.solution), best, reason: label);
+      expectJointMatchesSequential('${grid.join('/')} runs=4', l(grid, 4));
     }
+  });
+  // The cases above mostly win with fewer runs; this one's optimum needs all
+  // four (the 3-04 "Deadline" layout: the sequential solver takes ~0.3 s).
+  test('joint solver matches the sequential solver on a 4-run optimum', () {
+    final level = l(_deadline, 4);
+    expectJointMatchesSequential('deadline runs=4', level);
+    expect((solve(level) as Solved).solution, hasLength(4));
+    expect(solve(l(_deadline, 3)), isA<Unsolvable>());
   });
 
   /// Solves [grid] with [runs] runs in under 5 s and checks the result.
@@ -288,6 +307,21 @@ const _alternatingTwo = [
   '###A####',
   '###B####',
   '###E####',
+];
+
+/// Level 3-04 "Deadline": three plates on short arms and a 24-move route
+/// with no spare tick, so each plate needs its own ghost (best 30, 4 runs).
+const _deadline = [
+  '###b####',
+  '###.####',
+  '#a.S.c##',
+  '###.####',
+  'CBA.#E..',
+  '.######.',
+  '.######.',
+  '.######.',
+  '.######.',
+  '........',
 ];
 
 /// The same with three channels (doors A/B/C twice): needs three ghosts.

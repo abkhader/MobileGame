@@ -297,7 +297,12 @@ class _JointSearch {
       level.inBounds(p) && level.tileAt(p).kind != TileKind.wall;
 
   SolveResult solve() {
-    if (_dist[_index(level.start)] == _unreachable) return const Unsolvable();
+    // The final player moves at most one tile per tick and a run lasts at
+    // most maxTicksPerRun ticks, so a farther (or unreachable) exit cannot be
+    // reached. This also keeps the start's h inside the A* bucket list.
+    if (_dist[_index(level.start)] > Rules.maxTicksPerRun) {
+      return const Unsolvable();
+    }
     Solved? best;
     try {
       for (var m = 1; m <= level.runLimit; m++) {
