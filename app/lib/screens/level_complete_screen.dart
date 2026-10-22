@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../data/level_repository.dart';
-import 'game_screen.dart';
+import 'open_level.dart';
 
 class LevelCompleteScreen extends StatefulWidget {
   const LevelCompleteScreen({
@@ -28,6 +28,7 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
   String? _nextId;
   int _levelNumber = 0;
   bool _loaded = false;
+  bool _isLast = false;
 
   @override
   void initState() {
@@ -42,17 +43,13 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
     setState(() {
       _levelNumber = levelNumber(ids, widget.levelId);
       _nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
+      _isLast = ids.isNotEmpty && ids.last == widget.levelId;
       _loaded = true;
     });
   }
 
-  void _openGame(String id) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => GameScreen(services: widget.services, levelId: id),
-      ),
-    );
-  }
+  void _openGame(String id) =>
+      openLevel(context, widget.services, id, replace: true);
 
   /// Shows the between-levels interstitial when the policy asks for one.
   Future<void> _maybeInterstitial() async {
@@ -71,7 +68,13 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen> {
 
   Future<void> _levels() async {
     await _maybeInterstitial();
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    // The first win on the last level ends the story before the map.
+    if (_isLast && !widget.services.progress.endingSeen) {
+      await showEnding(context, widget.services);
+      if (!mounted) return;
+    }
+    Navigator.of(context).pop();
   }
 
   @override

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../data/level_repository.dart';
-import 'game_screen.dart';
+import 'open_level.dart';
 
 class LevelSelectScreen extends StatefulWidget {
   const LevelSelectScreen({required this.services, super.key});
@@ -27,13 +27,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     if (mounted) setState(() => _ids = ids);
   }
 
-  void _open(String id) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => GameScreen(services: widget.services, levelId: id),
-      ),
-    );
-  }
+  void _open(String id) => openLevel(context, widget.services, id);
 
   @override
   Widget build(BuildContext context) {

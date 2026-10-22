@@ -13,12 +13,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/story_flags.dart';
 
 const _frame = Duration(milliseconds: 200);
 final _board = find.byKey(const Key('board'));
 
 Future<AppServices> _services(WidgetTester t) async {
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues(introsSeenPrefs());
   final progress = (await t.runAsync(ProgressRepository.open))!;
   return AppServices(
     levels: LevelRepository(PlatformAssetBundle()),

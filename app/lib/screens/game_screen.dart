@@ -11,6 +11,7 @@ import '../game/game_controller.dart';
 import '../game/input.dart';
 import '../hints/hint_service.dart';
 import 'level_complete_screen.dart';
+import 'open_level.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -139,8 +140,6 @@ class _GameScreenState extends State<GameScreen> {
     _adBusy = true;
     try {
       final services = widget.services;
-      // Replace this route explicitly: a menu may sit above it.
-      final route = ModalRoute.of(context)!;
       final rewarded = await services.ads.showRewarded();
       if (!mounted) return;
       if (!rewarded) return _showNoAd();
@@ -149,17 +148,12 @@ class _GameScreenState extends State<GameScreen> {
       if (!mounted) return;
       final i = ids.indexOf(widget.levelId);
       final nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
-      final navigator = Navigator.of(context);
       if (nextId == null) {
         // Back to the Level Select underneath.
-        navigator.pop();
+        Navigator.of(context).pop();
       } else {
-        navigator.replace(
-          oldRoute: route,
-          newRoute: MaterialPageRoute<void>(
-            builder: (_) => GameScreen(services: services, levelId: nextId),
-          ),
-        );
+        // Replaces this game route, even with a menu above it.
+        await openLevel(context, services, nextId, replace: true);
       }
     } finally {
       _adBusy = false;
