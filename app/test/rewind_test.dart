@@ -45,12 +45,30 @@ Future<void> _rewind(WidgetTester t, String label) async {
   await t.pump(_frame);
 }
 
-/// Lets the snack bar's timer run out and its exit animation finish.
-Future<void> _letSnackBarGo(WidgetTester t) async {
+/// Lets the banner's timer run out and its fade finish.
+Future<void> _letBannerGo(WidgetTester t) async {
   for (var i = 0; i < 6; i++) {
     await t.pump(const Duration(seconds: 1));
   }
 }
+
+double _bannerOpacity(WidgetTester t) => t
+    .widget<AnimatedOpacity>(
+      find.ancestor(
+        of: find.text(_tip),
+        matching: find.byType(AnimatedOpacity),
+      ),
+    )
+    .opacity;
+
+bool _undoEnabled(WidgetTester t) => t
+    .widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text('Undo'),
+        matching: find.bySubtype<ButtonStyleButton>(),
+      ),
+    )
+    .enabled;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -93,11 +111,12 @@ void main() {
     expect(find.text(_tip), findsNothing);
     await _rewind(t, 'Rewind · 2 left');
     expect(find.text(_tip), findsOneWidget);
-    await _letSnackBarGo(t);
-    expect(find.text(_tip), findsNothing);
+    expect(_bannerOpacity(t), 1);
+    await _letBannerGo(t);
+    expect(_bannerOpacity(t), 0);
     await _rewind(t, 'Rewind · 1 left');
-    expect(find.text(_tip), findsOneWidget);
-    await _letSnackBarGo(t);
+    expect(_bannerOpacity(t), 1);
+    await _letBannerGo(t);
 
     // A new session reads the count back: the third rewind stays quiet.
     await t.pumpWidget(const SizedBox());
@@ -133,6 +152,72 @@ void main() {
     await _rewind(t, 'Rewind · 2 left');
     await t.pumpWidget(const SizedBox());
     await _pumpGame(t, '1-03');
+    expect(_pulse, findsNothing);
+  });
+
+  testWidgets('the tip is a top banner, not a snack bar', (t) async {
+    await _pumpGame(t, '2-03');
+    await _rewind(t, 'Rewind · 2 left');
+    expect(find.byType(SnackBar), findsNothing);
+    expect(
+      find.ancestor(of: find.text(_tip), matching: find.byType(IgnorePointer)),
+      findsWidgets,
+    );
+    final boardTop = t.getTopLeft(_board).dy;
+    expect(t.getTopLeft(find.text(_tip)).dy - boardTop, lessThan(60));
+  });
+
+  testWidgets('the banner hides itself after about 3.5 seconds', (t) async {
+    await _pumpGame(t, '2-03');
+    await _rewind(t, 'Rewind · 2 left');
+    await t.pump(const Duration(milliseconds: 3000));
+    expect(_bannerOpacity(t), 1);
+    await t.pump(const Duration(milliseconds: 700));
+    await t.pump(const Duration(milliseconds: 500));
+    expect(_bannerOpacity(t), 0);
+  });
+
+  testWidgets('a tap or swipe while the banner shows still moves Pip', (
+    t,
+  ) async {
+    await _pumpGame(t, '2-03');
+    await _rewind(t, 'Rewind · 2 left');
+    expect(_bannerOpacity(t), 1);
+    expect(_undoEnabled(t), isFalse);
+    await t.tap(find.text(_tip), warnIfMissed: false);
+    await t.pump(_frame);
+    expect(_undoEnabled(t), isTrue);
+    await t.tap(find.text('Undo'));
+    await t.pump(_frame);
+    expect(_undoEnabled(t), isFalse);
+    await t.flingFrom(t.getCenter(find.text(_tip)), const Offset(300, 0), 1000);
+    await t.pump(_frame);
+    expect(_undoEnabled(t), isTrue);
+  });
+
+  testWidgets('leaving the screen cancels the banner timer', (t) async {
+    await _pumpGame(t, '2-03');
+    await _rewind(t, 'Rewind · 2 left');
+    await t.pumpWidget(const SizedBox());
+    // A pending Timer would fail the test at teardown.
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
+  testWidgets('reduce motion keeps the 1-03 pulse still', (t) async {
+    final services = await _services(t);
+    await t.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: GameScreen(services: services, levelId: '1-03'),
+        ),
+      ),
+    );
+    await t.pump(_frame);
+    await t.pump(_frame);
+    await t.tap(_board);
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 600));
     expect(_pulse, findsNothing);
   });
 }

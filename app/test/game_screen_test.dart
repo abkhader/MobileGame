@@ -70,7 +70,7 @@ Future<void> _flingRight(WidgetTester t) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('HUD starts at run 1 with undo and end run disabled', (t) async {
+  testWidgets('HUD starts at run 1 with undo and rewind disabled', (t) async {
     await _pumpGame(t, '1-03');
     expect(find.text('Echo'), findsOneWidget);
     expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
@@ -87,7 +87,7 @@ void main() {
     expect(_enabled(t, 'Hint'), isTrue);
   });
 
-  testWidgets('a swipe moves and enables undo and end run', (t) async {
+  testWidgets('a swipe moves and enables undo and rewind', (t) async {
     await _pumpGame(t, '1-03');
     await _flingRight(t);
     await t.pump(_frame);

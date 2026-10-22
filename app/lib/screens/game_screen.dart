@@ -43,6 +43,9 @@ class _GameScreenState extends State<GameScreen> {
   bool _hintUnlocked = false;
   bool _adBusy = false;
   bool _rewound = false;
+  bool _tipShown = false;
+  bool _tipVisible = false;
+  Timer? _tipTimer;
 
   @visibleForTesting
   GameController? get controllerForTesting => _controller;
@@ -97,23 +100,20 @@ class _GameScreenState extends State<GameScreen> {
   static const _rewindTipsMax = 2;
   static const _rewindTip =
       'Echo created. It will repeat every move you just made.';
+  static const _tipDuration = Duration(milliseconds: 3500);
 
   /// A run ended and play goes on: explain the echo, for the first rewinds.
   void _onRewound() {
     _rewound = true;
     final progress = widget.services.progress;
     if (progress.rewindTipsShown >= _rewindTipsMax) return;
-    unawaited(progress.markRewindTipShown());
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        // Floats above the button row so Rewind stays tappable.
-        const SnackBar(
-          content: Text(_rewindTip),
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.fromLTRB(16, 0, 16, 88),
-        ),
-      );
+    unawaited(progress.markRewindTipShown().catchError((_) {}));
+    _tipTimer?.cancel();
+    _tipTimer = Timer(_tipDuration, () {
+      if (mounted) setState(() => _tipVisible = false);
+    });
+    _tipShown = true;
+    _tipVisible = true;
   }
 
   void _playSounds(GameController c) {
@@ -219,6 +219,7 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void dispose() {
     _winTimer?.cancel();
+    _tipTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -303,6 +304,19 @@ class _GameScreenState extends State<GameScreen> {
                   child: GameWidget(game: _board!),
                 ),
               ),
+              if (_tipShown)
+                Positioned(
+                  top: 8,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _tipVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 250),
+                      child: _TipBanner(text: _rewindTip),
+                    ),
+                  ),
+                ),
               if (state.status == GameStatus.lost)
                 Center(
                   child: Card(
@@ -351,6 +365,7 @@ class _GameScreenState extends State<GameScreen> {
     // Level 1-03 teaches rewinding: nudge the button until it has been used.
     final nudge =
         c.level.id == '1-03' &&
+        !MediaQuery.disableAnimationsOf(context) &&
         !_rewound &&
         widget.services.progress.rewindTipsShown == 0;
     return _button(
@@ -379,12 +394,38 @@ class _GameScreenState extends State<GameScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: pulse
-            ? _Pulse(
-                key: const Key('rewind-pulse'),
-                active: onPressed != null,
-                child: button,
+            ? RepaintBoundary(
+                child: _Pulse(
+                  key: const Key('rewind-pulse'),
+                  active: onPressed != null,
+                  child: button,
+                ),
               )
             : button,
+      ),
+    );
+  }
+}
+
+class _TipBanner extends StatelessWidget {
+  const _TipBanner({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.inverseSurface,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: scheme.onInverseSurface),
+        ),
       ),
     );
   }
