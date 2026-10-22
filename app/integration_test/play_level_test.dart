@@ -3,6 +3,7 @@ import 'package:echo_app/app_services.dart';
 import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
+import 'package:echo_app/data/story_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +25,7 @@ void main() {
           progress: progress,
           ads: FakeAdService(),
           audio: const SilentAudioService(),
+          story: StoryRepository(PlatformAssetBundle()),
         ),
       ),
     );

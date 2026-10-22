@@ -9,6 +9,7 @@ import 'app_services.dart';
 import 'audio/flame_audio_service.dart';
 import 'data/level_repository.dart';
 import 'data/progress_repository.dart';
+import 'data/story_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +23,7 @@ Future<void> main() async {
         progress: progress,
         ads: ads,
         audio: FlameAudioService(),
+        story: StoryRepository(rootBundle),
       ),
     ),
   );

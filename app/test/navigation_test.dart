@@ -4,6 +4,7 @@ import 'package:echo_app/app_services.dart';
 import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
+import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/screens/home_screen.dart';
 import 'package:echo_app/screens/level_complete_screen.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,7 @@ Future<AppServices> _services(WidgetTester t) async {
     progress: progress,
     ads: FakeAdService(),
     audio: const SilentAudioService(),
+    story: StoryRepository(PlatformAssetBundle()),
   );
 }
 
@@ -99,6 +101,15 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   Future<void> setMusicOn(bool value) => _inner.setMusicOn(value);
   @override
   Future<void> setSfxOn(bool value) => _inner.setSfxOn(value);
+  @override
+  bool seenChapterIntro(int chapter) => _inner.seenChapterIntro(chapter);
+  @override
+  Future<void> markChapterIntroSeen(int chapter) =>
+      _inner.markChapterIntroSeen(chapter);
+  @override
+  bool get endingSeen => _inner.endingSeen;
+  @override
+  Future<void> markEndingSeen() => _inner.markEndingSeen();
 }
 
 void main() {
@@ -143,6 +154,7 @@ void main() {
       progress: gated,
       ads: real.ads,
       audio: real.audio,
+      story: real.story,
     );
     await _pumpHome(t, services);
     await _openLevelSelect(t);

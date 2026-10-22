@@ -28,4 +28,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/levels/
+    - assets/story/
     - assets/audio/

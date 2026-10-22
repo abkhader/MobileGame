@@ -2,7 +2,7 @@
   "id": "1-02",
   "name": "Hold the Door",
   "runLimit": 1,
-  "tip": "Step on a plate to open its door.",
+  "tip": "Plates open doors, but only while something stands on them.",
   "grid": [
     "#######",
     "#S.aAE#",

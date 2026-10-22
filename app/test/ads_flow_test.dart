@@ -3,6 +3,7 @@ import 'package:echo_app/app_services.dart';
 import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
+import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/game/echo_board.dart';
 import 'package:echo_app/hints/hint_service.dart';
 import 'package:echo_app/screens/game_screen.dart';
@@ -47,6 +48,7 @@ Future<AppServices> _services(
     progress: progress,
     ads: ads,
     audio: const SilentAudioService(),
+    story: StoryRepository(PlatformAssetBundle()),
     adPolicy: policy,
   );
 }

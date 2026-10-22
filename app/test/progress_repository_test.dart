@@ -82,4 +82,41 @@ void main() {
     expect(repo.musicOn, isFalse);
     expect(repo.sfxOn, isFalse);
   });
+
+  test('story flags default to false', () async {
+    final repo = await ProgressRepository.open();
+    expect(repo.seenChapterIntro(2), isFalse);
+    expect(repo.endingSeen, isFalse);
+  });
+
+  test('story flags persist per chapter', () async {
+    var repo = await ProgressRepository.open();
+    await repo.markChapterIntroSeen(2);
+    await repo.markEndingSeen();
+    repo = await ProgressRepository.open();
+    expect(repo.seenChapterIntro(2), isTrue);
+    expect(repo.seenChapterIntro(1), isFalse);
+    expect(repo.endingSeen, isTrue);
+  });
+
+  test('old saved data without story keys still opens', () async {
+    SharedPreferences.setMockInitialValues({
+      key: '{"levels":{"1-01":{"stars":2}},"musicOn":false,"sfxOn":true}',
+    });
+    final repo = await ProgressRepository.open();
+    expect(repo.progressOf('1-01').stars, 2);
+    expect(repo.musicOn, isFalse);
+    expect(repo.seenChapterIntro(1), isFalse);
+    expect(repo.endingSeen, isFalse);
+  });
+
+  test('story flags survive later progress saves', () async {
+    var repo = await ProgressRepository.open();
+    await repo.markChapterIntroSeen(1);
+    await repo.markEndingSeen();
+    await repo.recordCompletion('1-01', 3);
+    repo = await ProgressRepository.open();
+    expect(repo.seenChapterIntro(1), isTrue);
+    expect(repo.endingSeen, isTrue);
+  });
 }

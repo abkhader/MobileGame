@@ -2,7 +2,7 @@
   "id": "1-03",
   "name": "Echo",
   "runLimit": 2,
-  "tip": "Tap End run. Your past self will help you.",
+  "tip": "Tap End run. Pip rewinds, and your echo replays every move.",
   "grid": [
     "#######",
     "#Sa.AE#",

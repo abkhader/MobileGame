@@ -13,7 +13,14 @@ class LevelProgress {
 /// Stars, unlocks and settings, persisted as one JSON string.
 /// Notifies listeners after each successful save.
 class ProgressRepository extends ChangeNotifier {
-  ProgressRepository._(this._prefs, this._stars, this._musicOn, this._sfxOn);
+  ProgressRepository._(
+    this._prefs,
+    this._stars,
+    this._musicOn,
+    this._sfxOn,
+    this._seenChapters,
+    this._endingSeen,
+  );
 
   static const storageKey = 'echo.progress.v1';
 
@@ -22,12 +29,16 @@ class ProgressRepository extends ChangeNotifier {
   final Map<String, int> _stars;
   bool _musicOn;
   bool _sfxOn;
+  final Set<int> _seenChapters;
+  bool _endingSeen;
 
   static Future<ProgressRepository> open() async {
     final prefs = await SharedPreferences.getInstance();
     final stars = <String, int>{};
     var musicOn = true;
     var sfxOn = true;
+    final seenChapters = <int>{};
+    var endingSeen = false;
     try {
       final raw = prefs.getString(storageKey);
       if (raw != null) {
@@ -44,18 +55,35 @@ class ProgressRepository extends ChangeNotifier {
           }
           if (decoded['musicOn'] is bool) musicOn = decoded['musicOn'] as bool;
           if (decoded['sfxOn'] is bool) sfxOn = decoded['sfxOn'] as bool;
+          final seen = decoded['seenChapters'];
+          if (seen is List<dynamic>) seenChapters.addAll(seen.whereType<int>());
+          if (decoded['endingSeen'] is bool) {
+            endingSeen = decoded['endingSeen'] as bool;
+          }
         }
       }
     } catch (_) {
       stars.clear();
       musicOn = true;
       sfxOn = true;
+      seenChapters.clear();
+      endingSeen = false;
     }
-    return ProgressRepository._(prefs, stars, musicOn, sfxOn);
+    return ProgressRepository._(
+      prefs,
+      stars,
+      musicOn,
+      sfxOn,
+      seenChapters,
+      endingSeen,
+    );
   }
 
   bool get musicOn => _musicOn;
   bool get sfxOn => _sfxOn;
+  bool get endingSeen => _endingSeen;
+
+  bool seenChapterIntro(int chapter) => _seenChapters.contains(chapter);
 
   LevelProgress progressOf(String id) {
     final s = _stars[id];
@@ -93,6 +121,16 @@ class ProgressRepository extends ChangeNotifier {
     return _save();
   }
 
+  Future<void> markChapterIntroSeen(int chapter) {
+    _seenChapters.add(chapter);
+    return _save();
+  }
+
+  Future<void> markEndingSeen() {
+    _endingSeen = true;
+    return _save();
+  }
+
   Future<void> _save() async {
     final json = jsonEncode({
       'levels': {
@@ -100,6 +138,8 @@ class ProgressRepository extends ChangeNotifier {
       },
       'musicOn': _musicOn,
       'sfxOn': _sfxOn,
+      'seenChapters': _seenChapters.toList()..sort(),
+      'endingSeen': _endingSeen,
     });
     await _prefs.setString(storageKey, json);
     notifyListeners();

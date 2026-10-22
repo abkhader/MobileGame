@@ -4,6 +4,7 @@ import 'package:echo_app/app_services.dart';
 import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
+import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_core/echo_core.dart';
 import 'package:echo_app/game/game_controller.dart';
 import 'package:echo_app/screens/game_screen.dart';
@@ -34,6 +35,7 @@ Future<AppServices> _services(WidgetTester t, {AssetBundle? bundle}) async {
     progress: progress,
     ads: FakeAdService(),
     audio: const SilentAudioService(),
+    story: StoryRepository(PlatformAssetBundle()),
   );
 }
 
@@ -74,7 +76,7 @@ void main() {
     expect(find.text('Run 1 / 2'), findsOneWidget);
     expect(find.text('Moves 0'), findsOneWidget);
     expect(
-      find.text('Tap End run. Your past self will help you.'),
+      find.text('Tap End run. Pip rewinds, and your echo replays every move.'),
       findsOneWidget,
     );
     expect(_enabled(t, 'Undo'), isFalse);
