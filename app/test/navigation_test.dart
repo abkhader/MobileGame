@@ -5,6 +5,7 @@ import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
+import 'package:echo_app/game/battery_bar.dart';
 import 'package:echo_app/screens/city_map_screen.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_app/screens/home_screen.dart';
@@ -143,12 +144,6 @@ String _openedLevel(WidgetTester t) =>
     t.widget<GameScreen>(find.byType(GameScreen)).levelId;
 
 void main() {
-  late SemanticsHandle semantics;
-  setUp(
-    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
-        .ensureSemantics(),
-  );
-  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('Play on a fresh install opens 1-01', (t) async {
@@ -327,10 +322,8 @@ void main() {
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('Level complete'), findsOneWidget);
     // The game route itself was replaced, not the menu above it.
-    expect(
-      find.bySemanticsLabel('Battery, 21 moves left', skipOffstage: false),
-      findsNothing,
-    );
+    expect(find.byType(GameScreen, skipOffstage: false), findsNothing);
+    expect(find.byType(BatteryBar, skipOffstage: false), findsNothing);
   });
 
   testWidgets('Retry reopens the same level with a full battery', (t) async {

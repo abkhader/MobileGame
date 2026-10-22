@@ -68,12 +68,6 @@ Future<void> _flingRight(WidgetTester t) =>
     t.fling(_board, const Offset(300, 0), 1000);
 
 void main() {
-  late SemanticsHandle semantics;
-  setUp(
-    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
-        .ensureSemantics(),
-  );
-  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('HUD starts at run 1 with undo and end run disabled', (t) async {

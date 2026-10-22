@@ -26,20 +26,16 @@ Color? _fillColor(WidgetTester t) {
 
 void main() {
   testWidgets('tick 0 is full', (t) async {
-    final handle = t.ensureSemantics();
     await _pump(t, 0);
     expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
     expect(_fill(t).widthFactor, 1.0);
     expect(_fillColor(t), palette.platePressed);
-    handle.dispose();
   });
 
   testWidgets('tick 25 is empty', (t) async {
-    final handle = t.ensureSemantics();
     await _pump(t, 25);
     expect(find.bySemanticsLabel('Battery, 0 moves left'), findsOneWidget);
     expect(_fill(t).widthFactor, 0.0);
-    handle.dispose();
   });
 
   testWidgets('tick 20 (20% left) uses the low colour', (t) async {

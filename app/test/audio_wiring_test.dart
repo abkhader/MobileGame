@@ -50,12 +50,6 @@ Future<void> _swipe(WidgetTester t) async {
 }
 
 void main() {
-  late SemanticsHandle semantics;
-  setUp(
-    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
-        .ensureSemantics(),
-  );
-  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('a swipe on 1-01 plays move', (t) async {

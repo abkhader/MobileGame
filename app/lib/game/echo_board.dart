@@ -18,6 +18,10 @@ class EchoBoard extends FlameGame {
   List<Position>? hintPath;
 
   static const _trailLength = 4;
+  // Reused every frame so drawing allocates as little as possible.
+  static final _hintPaint = Paint()
+    ..color = palette.player.withValues(alpha: 0.4);
+  static final _trailPaint = Paint();
   static final _tickSeconds = palette.tickDuration.inMicroseconds / 1e6;
 
   // Positions being tweened from; null when snapped to the controller state.
@@ -161,13 +165,11 @@ class EchoBoard extends FlameGame {
 
     final hint = hintPath;
     if (hint != null) {
-      final dot = Paint()..color = palette.player.withValues(alpha: 0.4);
       for (final p in hint) {
-        canvas.drawCircle(layout.centerOf(p), cell * 0.08, dot);
+        canvas.drawCircle(layout.centerOf(p), cell * 0.08, _hintPaint);
       }
     }
 
-    final trailPaint = Paint();
     final t = _animating ? (_elapsed / _tickSeconds).clamp(0.0, 1.0) : 1.0;
     for (var i = 0; i < state.ghostPositions.length; i++) {
       final color = palette.ghostColors[i % palette.ghostColors.length];
@@ -179,7 +181,7 @@ class EchoBoard extends FlameGame {
           canvas.drawCircle(
             layout.centerOf(trail[j]),
             cell * 0.18,
-            trailPaint..color = color.withValues(alpha: alpha),
+            _trailPaint..color = color.withValues(alpha: alpha),
           );
         }
       }
