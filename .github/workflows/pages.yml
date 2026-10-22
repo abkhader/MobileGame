@@ -1,0 +1,40 @@
+name: Web preview
+
+# Builds the Flutter web app and publishes it to the gh-pages branch,
+# served by GitHub Pages at https://abkhader.github.io/MobileGame/
+on:
+  push:
+    branches: [main, feat/levels-and-sound]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+      - name: Build web
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build web --release --base-href /MobileGame/
+          touch build/web/.nojekyll
+      - name: Publish to gh-pages
+        working-directory: app/build/web
+        run: |
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "web build of ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
