@@ -1,0 +1,20 @@
+{
+  "id": "1-01",
+  "name": "First Step",
+  "runLimit": 1,
+  "tip": "Swipe to move Pip. Find the way out.",
+  "grid": [
+    "#######",
+    "#S...E#",
+    "#######"
+  ],
+  "bestScore": 4,
+  "solution": [
+    [
+      "R",
+      "R",
+      "R",
+      "R"
+    ]
+  ]
+}

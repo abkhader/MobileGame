@@ -1,0 +1,20 @@
+{
+  "id": "1-02",
+  "name": "Hold the Door",
+  "runLimit": 1,
+  "tip": "Plates open doors, but only while something stands on them.",
+  "grid": [
+    "#######",
+    "#S.aAE#",
+    "#######"
+  ],
+  "bestScore": 4,
+  "solution": [
+    [
+      "R",
+      "R",
+      "R",
+      "R"
+    ]
+  ]
+}

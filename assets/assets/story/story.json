@@ -1,0 +1,35 @@
+{
+  "chapters": {
+    "1": {
+      "title": "The Outskirts",
+      "lines": [
+        "Lumen City went dark one night.",
+        "In a scrapyard on the edge of town, one small spark wakes up. Its name is Pip.",
+        "Pip's charge lasts 25 moves. When it runs out, Pip rewinds, and its old run stays behind as an echo."
+      ]
+    },
+    "2": {
+      "title": "The Market",
+      "lines": [
+        "The Market used to glow all night.",
+        "Its doors need many hands. Luckily, Pip has echoes.",
+        "Every echo keeps working, exactly as you taught it."
+      ]
+    },
+    "3": {
+      "title": "The Core",
+      "lines": [
+        "The Core powers the whole city.",
+        "Its locks open only to perfect timing.",
+        "Four echoes, one Pip, one chance to bring the light back."
+      ]
+    }
+  },
+  "ending": {
+    "lines": [
+      "The Core hums. One by one, the windows wake.",
+      "Lumen City glows again, lit by a small spark and everything it left behind.",
+      "Thanks for playing."
+    ]
+  }
+}
