@@ -73,14 +73,16 @@ void main() {
   testWidgets('HUD starts at run 1 with undo and end run disabled', (t) async {
     await _pumpGame(t, '1-03');
     expect(find.text('Echo'), findsOneWidget);
-    expect(find.text('Run 1 / 2'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
     expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
     expect(
-      find.text('Tap End run. Pip rewinds, and your echo replays every move.'),
+      find.text(
+        'Tap Rewind. Pip goes back to the start, and your echo repeats every move.',
+      ),
       findsOneWidget,
     );
     expect(_enabled(t, 'Undo'), isFalse);
-    expect(_enabled(t, 'End run'), isFalse);
+    expect(_enabled(t, 'Rewind · 1 left'), isFalse);
     expect(_enabled(t, 'Restart'), isTrue);
     expect(_enabled(t, 'Hint'), isTrue);
   });
@@ -92,7 +94,7 @@ void main() {
     expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
     expect(find.text('Moves 1'), findsNothing);
     expect(_enabled(t, 'Undo'), isTrue);
-    expect(_enabled(t, 'End run'), isTrue);
+    expect(_enabled(t, 'Rewind · 1 left'), isTrue);
   });
 
   testWidgets('three fast swipes all register', (t) async {
@@ -105,13 +107,13 @@ void main() {
     expect(find.bySemanticsLabel('Battery, 22 moves left'), findsOneWidget);
   });
 
-  testWidgets('End run starts the next run', (t) async {
+  testWidgets('Rewind starts the next run', (t) async {
     await _pumpGame(t, '1-03');
     await _flingRight(t);
     await t.pump(_frame);
-    await t.tap(find.text('End run'));
+    await t.tap(find.text('Rewind · 1 left'));
     await t.pump(_frame);
-    expect(find.text('Run 2 / 2'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 2 of 2'), findsOneWidget);
     expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
   });
 
@@ -120,7 +122,7 @@ void main() {
     await t.tap(_board);
     await t.pump(_frame);
     expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
-    await t.tap(find.text('End run'));
+    await t.tap(find.text('Give up'));
     await t.pump(_frame);
     expect(find.text('Out of runs'), findsOneWidget);
     await t.tap(find.text('Try again'));
@@ -133,7 +135,7 @@ void main() {
     await _pumpGame(t, '1-01');
     await t.tap(_board);
     await t.pump(_frame);
-    await t.tap(find.text('End run'));
+    await t.tap(find.text('Give up'));
     await t.pump(_frame);
     expect(find.text('Out of runs'), findsOneWidget);
     expect(_enabled(t, 'Hint'), isFalse);
@@ -155,13 +157,13 @@ void main() {
     );
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
-    expect(find.text('Run 1 / 2'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
     expect(find.text('placeholder'), findsNothing);
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('placeholder'), findsOneWidget);
-    expect(find.text('Run 1 / 2'), findsNothing);
+    expect(find.bySemanticsLabel('Run 1 of 2'), findsNothing);
   });
 
   testWidgets('a broken level shows the error card and pops', (t) async {

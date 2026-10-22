@@ -187,9 +187,9 @@ void main() {
     expect(_echoBoard(t).hintPath, HintService.pathFor(level, 0));
     await t.fling(_board, const Offset(300, 0), 1000);
     await t.pump(_frame);
-    await t.tap(find.text('End run'));
+    await t.tap(find.text('Rewind · 1 left'));
     await t.pump(_frame);
-    expect(find.text('Run 2 / 2'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 2 of 2'), findsOneWidget);
     expect(_echoBoard(t).hintPath, HintService.pathFor(level, 1));
     expect(_echoBoard(t).hintPath!.last, const Position(5, 1));
   });
@@ -205,12 +205,12 @@ void main() {
     expect(find.text(note), findsNothing);
     await t.tap(_board);
     await t.pump(_frame);
-    await t.tap(find.text('End run'));
+    await t.tap(find.text('Rewind · 1 left'));
     await t.pump(_frame);
     expect(find.text(note), findsOneWidget);
     await t.tap(find.text('Restart'));
     await t.pump(_frame);
-    expect(find.text('Run 1 / 2'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
     expect(find.text(note), findsNothing);
     expect(_echoBoard(t).hintPath, isNotNull);
   });

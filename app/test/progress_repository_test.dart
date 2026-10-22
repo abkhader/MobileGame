@@ -119,4 +119,23 @@ void main() {
     expect(repo.seenChapterIntro(1), isTrue);
     expect(repo.endingSeen, isTrue);
   });
+
+  test('rewind tip count starts at 0 and survives reopen', () async {
+    var repo = await ProgressRepository.open();
+    expect(repo.rewindTipsShown, 0);
+    await repo.markRewindTipShown();
+    await repo.markRewindTipShown();
+    repo = await ProgressRepository.open();
+    expect(repo.rewindTipsShown, 2);
+  });
+
+  test('old prefs without the rewind key load with count 0', () async {
+    SharedPreferences.setMockInitialValues({
+      key: '{"levels":{"1-01":{"stars":2}},"musicOn":false}',
+    });
+    final repo = await ProgressRepository.open();
+    expect(repo.rewindTipsShown, 0);
+    expect(repo.progressOf('1-01').stars, 2);
+    expect(repo.musicOn, isFalse);
+  });
 }

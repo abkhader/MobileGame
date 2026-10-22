@@ -101,6 +101,10 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   @override
   Future<void> recordSkip(String id) => _inner.recordSkip(id);
   @override
+  int get rewindTipsShown => _inner.rewindTipsShown;
+  @override
+  Future<void> markRewindTipShown() => _inner.markRewindTipShown();
+  @override
   bool get musicOn => _inner.musicOn;
   @override
   bool get sfxOn => _inner.sfxOn;
@@ -279,7 +283,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
     await t.pump(_frame);
-    expect(find.text('Run 1 / 1'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 1 of 1'), findsOneWidget);
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
@@ -303,7 +307,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
     await t.pump(_frame);
-    expect(find.text('Run 1 / 1'), findsOneWidget);
+    expect(find.bySemanticsLabel('Run 1 of 1'), findsOneWidget);
     // Level 1-02 is also won by four moves right.
     await _winLevel1(t);
     expect(find.text('Level complete'), findsOneWidget);

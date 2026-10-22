@@ -20,6 +20,7 @@ class ProgressRepository extends ChangeNotifier {
     this._sfxOn,
     this._seenChapters,
     this._endingSeen,
+    this._rewindTipsShown,
   );
 
   static const storageKey = 'echo.progress.v1';
@@ -31,6 +32,7 @@ class ProgressRepository extends ChangeNotifier {
   bool _sfxOn;
   final Set<int> _seenChapters;
   bool _endingSeen;
+  int _rewindTipsShown;
 
   static Future<ProgressRepository> open() async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,6 +41,7 @@ class ProgressRepository extends ChangeNotifier {
     var sfxOn = true;
     final seenChapters = <int>{};
     var endingSeen = false;
+    var rewindTipsShown = 0;
     try {
       final raw = prefs.getString(storageKey);
       if (raw != null) {
@@ -60,6 +63,8 @@ class ProgressRepository extends ChangeNotifier {
           if (decoded['endingSeen'] is bool) {
             endingSeen = decoded['endingSeen'] as bool;
           }
+          final tips = decoded['rewindTipsShown'];
+          if (tips is int && tips > 0) rewindTipsShown = tips;
         }
       }
     } catch (_) {
@@ -68,6 +73,7 @@ class ProgressRepository extends ChangeNotifier {
       sfxOn = true;
       seenChapters.clear();
       endingSeen = false;
+      rewindTipsShown = 0;
     }
     return ProgressRepository._(
       prefs,
@@ -76,12 +82,16 @@ class ProgressRepository extends ChangeNotifier {
       sfxOn,
       seenChapters,
       endingSeen,
+      rewindTipsShown,
     );
   }
 
   bool get musicOn => _musicOn;
   bool get sfxOn => _sfxOn;
   bool get endingSeen => _endingSeen;
+
+  /// How many times the first-rewind tip has been shown (it stops at 2).
+  int get rewindTipsShown => _rewindTipsShown;
 
   bool seenChapterIntro(int chapter) => _seenChapters.contains(chapter);
 
@@ -131,6 +141,11 @@ class ProgressRepository extends ChangeNotifier {
     return _save();
   }
 
+  Future<void> markRewindTipShown() {
+    _rewindTipsShown++;
+    return _save();
+  }
+
   Future<void> _save() async {
     final json = jsonEncode({
       'levels': {
@@ -140,6 +155,7 @@ class ProgressRepository extends ChangeNotifier {
       'sfxOn': _sfxOn,
       'seenChapters': _seenChapters.toList()..sort(),
       'endingSeen': _endingSeen,
+      'rewindTipsShown': _rewindTipsShown,
     });
     await _prefs.setString(storageKey, json);
     notifyListeners();
