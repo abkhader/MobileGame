@@ -15,6 +15,8 @@ class FlameAudioService implements AudioService {
   };
 
   Future<void>? _preload;
+  bool _loaded = false;
+  Future<AudioPool>? _movePool;
   bool _bgmInitialized = false;
   bool _wanted = false;
 
@@ -22,9 +24,21 @@ class FlameAudioService implements AudioService {
   Future<void> _ensureLoaded() {
     return _preload ??= FlameAudio.audioCache
         .loadAll([..._files.values, 'ambient.wav'])
-        .then<void>((_) {})
+        .then<void>((_) {
+          _loaded = true;
+        })
         .catchError((Object e) {
           _preload = null;
+          throw e;
+        });
+  }
+
+  /// One lazily created pool for the move sound; a failure clears it so the
+  /// next call retries.
+  Future<AudioPool> _ensureMovePool() {
+    return _movePool ??= FlameAudio.createPool(_files[Sfx.move]!, maxPlayers: 4)
+        .catchError((Object e) {
+          _movePool = null;
           throw e;
         });
   }
@@ -32,7 +46,15 @@ class FlameAudioService implements AudioService {
   @override
   Future<void> playSfx(Sfx s) async {
     try {
-      await _ensureLoaded();
+      if (!_loaded) await _ensureLoaded();
+      if (s == Sfx.move) {
+        try {
+          await (await _ensureMovePool()).start();
+          return;
+        } catch (_) {
+          // Fall back to a one-shot player below.
+        }
+      }
       await FlameAudio.play(_files[s]!);
     } catch (_) {}
   }
