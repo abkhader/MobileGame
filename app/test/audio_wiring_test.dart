@@ -50,6 +50,12 @@ Future<void> _swipe(WidgetTester t) async {
 }
 
 void main() {
+  late SemanticsHandle semantics;
+  setUp(
+    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
+        .ensureSemantics(),
+  );
+  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('a swipe on 1-01 plays move', (t) async {
@@ -165,7 +171,7 @@ void main() {
     final audio = FakeAudioService(throws: true);
     await _pumpGame(t, await _services(t, audio));
     await _swipe(t);
-    expect(find.text('Moves 1'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
     expect(t.takeException(), isNull);
   });
 }

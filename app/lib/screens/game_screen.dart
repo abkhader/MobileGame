@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../audio/game_sounds.dart';
+import '../game/battery_bar.dart';
 import '../game/echo_board.dart';
 import '../game/game_controller.dart';
 import '../game/input.dart';
@@ -242,7 +243,7 @@ class _GameScreenState extends State<GameScreen> {
                 'Run ${state.runIndex + 1} / ${c.level.runLimit}',
                 style: textTheme.titleMedium,
               ),
-              Text('Moves ${state.tick}', style: textTheme.titleMedium),
+              BatteryBar(tick: state.tick),
             ],
           ),
         ),

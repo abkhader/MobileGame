@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:echo_core/echo_core.dart';
 import 'package:flame/game.dart';
 
+import '../art/pip.dart';
 import 'board_layout.dart';
 import 'game_controller.dart';
 import 'palette.dart' as palette;
@@ -166,6 +167,7 @@ class EchoBoard extends FlameGame {
       }
     }
 
+    final trailPaint = Paint();
     final t = _animating ? (_elapsed / _tickSeconds).clamp(0.0, 1.0) : 1.0;
     for (var i = 0; i < state.ghostPositions.length; i++) {
       final color = palette.ghostColors[i % palette.ghostColors.length];
@@ -177,27 +179,22 @@ class EchoBoard extends FlameGame {
           canvas.drawCircle(
             layout.centerOf(trail[j]),
             cell * 0.18,
-            Paint()..color = color.withValues(alpha: alpha),
+            trailPaint..color = color.withValues(alpha: alpha),
           );
         }
       }
       final from = _fromGhosts?[i] ?? state.ghostPositions[i];
-      canvas.drawCircle(
+      paintPip(
+        canvas,
         _lerp(layout, from, state.ghostPositions[i], t),
         cell * 0.3,
-        Paint()..color = color,
+        color,
+        opacity: 0.55,
       );
     }
 
     final center = _lerp(layout, _fromPlayer ?? state.player, state.player, t);
-    canvas.drawCircle(
-      center,
-      cell * 0.38,
-      Paint()
-        ..color = palette.player.withValues(alpha: 0.6)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.15),
-    );
-    canvas.drawCircle(center, cell * 0.3, Paint()..color = palette.player);
+    paintPip(canvas, center, cell * 0.3, palette.player);
   }
 
   void _drawGrid(Canvas canvas, BoardLayout layout, Level level) {

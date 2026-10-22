@@ -143,6 +143,12 @@ String _openedLevel(WidgetTester t) =>
     t.widget<GameScreen>(find.byType(GameScreen)).levelId;
 
 void main() {
+  late SemanticsHandle semantics;
+  setUp(
+    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
+        .ensureSemantics(),
+  );
+  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('Play on a fresh install opens 1-01', (t) async {
@@ -321,10 +327,13 @@ void main() {
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('Level complete'), findsOneWidget);
     // The game route itself was replaced, not the menu above it.
-    expect(find.text('Moves 4', skipOffstage: false), findsNothing);
+    expect(
+      find.bySemanticsLabel('Battery, 21 moves left', skipOffstage: false),
+      findsNothing,
+    );
   });
 
-  testWidgets('Retry reopens the same level at Moves 0', (t) async {
+  testWidgets('Retry reopens the same level with a full battery', (t) async {
     final services = await _services(t);
     await _pumpHome(t, services);
     await _openMap(t);
@@ -335,7 +344,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
     await t.pump(_frame);
-    expect(find.text('Moves 0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
   });
 
   testWidgets('Levels returns to the map', (t) async {

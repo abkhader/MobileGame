@@ -68,13 +68,19 @@ Future<void> _flingRight(WidgetTester t) =>
     t.fling(_board, const Offset(300, 0), 1000);
 
 void main() {
+  late SemanticsHandle semantics;
+  setUp(
+    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
+        .ensureSemantics(),
+  );
+  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('HUD starts at run 1 with undo and end run disabled', (t) async {
     await _pumpGame(t, '1-03');
     expect(find.text('Echo'), findsOneWidget);
     expect(find.text('Run 1 / 2'), findsOneWidget);
-    expect(find.text('Moves 0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
     expect(
       find.text('Tap End run. Pip rewinds, and your echo replays every move.'),
       findsOneWidget,
@@ -89,7 +95,8 @@ void main() {
     await _pumpGame(t, '1-03');
     await _flingRight(t);
     await t.pump(_frame);
-    expect(find.text('Moves 1'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
+    expect(find.text('Moves 1'), findsNothing);
     expect(_enabled(t, 'Undo'), isTrue);
     expect(_enabled(t, 'End run'), isTrue);
   });
@@ -101,7 +108,7 @@ void main() {
     await _flingRight(t);
     await t.pump(_frame);
     await t.pump(_frame);
-    expect(find.text('Moves 3'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 22 moves left'), findsOneWidget);
   });
 
   testWidgets('End run starts the next run', (t) async {
@@ -111,21 +118,21 @@ void main() {
     await t.tap(find.text('End run'));
     await t.pump(_frame);
     expect(find.text('Run 2 / 2'), findsOneWidget);
-    expect(find.text('Moves 0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
   });
 
   testWidgets('running out of runs shows the lose overlay', (t) async {
     await _pumpGame(t, '1-01');
     await t.tap(_board);
     await t.pump(_frame);
-    expect(find.text('Moves 1'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
     await t.tap(find.text('End run'));
     await t.pump(_frame);
     expect(find.text('Out of runs'), findsOneWidget);
     await t.tap(find.text('Try again'));
     await t.pump(_frame);
     expect(find.text('Out of runs'), findsNothing);
-    expect(find.text('Moves 0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
   });
 
   testWidgets('Hint is disabled once the level is lost', (t) async {

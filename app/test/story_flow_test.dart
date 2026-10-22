@@ -98,6 +98,12 @@ Future<void> _completeChapter1(WidgetTester t, AppServices services) async {
 }
 
 void main() {
+  late SemanticsHandle semantics;
+  setUp(
+    () => semantics = TestWidgetsFlutterBinding.ensureInitialized()
+        .ensureSemantics(),
+  );
+  tearDown(() => semantics.dispose());
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('first open of 1-01 shows the Outskirts card once', (t) async {
@@ -151,7 +157,7 @@ void main() {
     await _tapAndSettle(t, find.text('Retry'));
     expect(find.byType(StoryCardScreen), findsNothing);
     expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-01');
-    expect(find.text('Moves 0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
   });
 
   testWidgets(
