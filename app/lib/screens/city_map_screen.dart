@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
@@ -87,13 +85,14 @@ class _CityMapScreenState extends State<CityMapScreen> {
     final all = buildingsFor(ids, services.progress);
     final buildingOf = {for (var i = 0; i < ids.length; i++) ids[i]: all[i]};
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final MapEntry(key: chapter, value: districtIds)
               in districts.entries)
             _DistrictPanel(
+              seed: chapter,
               title:
                   _story?.chapters[chapter]?.title ??
                   chapterOf(districtIds.first),
@@ -110,8 +109,9 @@ class _CityMapScreenState extends State<CityMapScreen> {
   }
 }
 
-class _DistrictPanel extends StatefulWidget {
+class _DistrictPanel extends StatelessWidget {
   const _DistrictPanel({
+    required this.seed,
     required this.title,
     required this.allIds,
     required this.districtIds,
@@ -120,6 +120,8 @@ class _DistrictPanel extends StatefulWidget {
     required this.onOpen,
   });
 
+  /// Gives each district its own silhouette.
+  final int seed;
   final String title;
   final List<String> allIds;
   final List<String> districtIds;
@@ -127,28 +129,17 @@ class _DistrictPanel extends StatefulWidget {
   final VoidCallback onTitle;
   final ValueChanged<String> onOpen;
 
-  @override
-  State<_DistrictPanel> createState() => _DistrictPanelState();
-}
-
-class _DistrictPanelState extends State<_DistrictPanel> {
-  static const _minSlot = 48.0;
   static const _skylineHeight = 148.0;
   static const _labelHeight = 28.0;
 
-  ScrollController? _scroll;
-
-  @override
-  void dispose() {
-    _scroll?.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
+    // Slim padding so ten buildings fit side by side at 320 px: each column
+    // is (320 - 2*12 - 2*1 - 2*4) / 10 = 28.6 wide.
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+      clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
         color: const Color(0xFF0A1020),
         borderRadius: BorderRadius.circular(16),
@@ -158,78 +149,54 @@ class _DistrictPanelState extends State<_DistrictPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextButton(
-            onPressed: widget.onTitle,
+            onPressed: onTitle,
             style: TextButton.styleFrom(foregroundColor: Colors.white),
-            child: Text(
-              widget.title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            child: Text(title, style: Theme.of(context).textTheme.titleLarge),
           ),
-          LayoutBuilder(builder: _buildSkyline),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSkyline(BuildContext context, BoxConstraints constraints) {
-    final n = widget.buildings.length;
-    final width = constraints.maxWidth;
-    final slot = n == 0 ? width : math.max(width / n, _minSlot);
-    final contentWidth = slot * n;
-    final skyline = SizedBox(
-      width: math.max(contentWidth, width),
-      height: _skylineHeight + _labelHeight,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            bottom: _labelHeight,
-            child: CustomPaint(painter: _SkylinePainter(widget.buildings)),
-          ),
-          Positioned.fill(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          SizedBox(
+            height: _skylineHeight + _labelHeight,
+            child: Stack(
               children: [
-                for (var i = 0; i < n; i++)
-                  SizedBox(width: slot, child: _target(i)),
+                Positioned.fill(
+                  bottom: _labelHeight,
+                  // The skyline only repaints when its buildings change, not
+                  // on every ink splash above it.
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _SkylinePainter(buildings, seed),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < buildings.length; i++)
+                        Expanded(child: _target(i)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
     );
-    if (contentWidth <= width) return skyline;
-    // Narrow screens scroll the skyline; start with the next building to
-    // play in view.
-    _scroll ??= ScrollController(
-      initialScrollOffset: _frontierOffset(slot, width, contentWidth),
-    );
-    return SingleChildScrollView(
-      controller: _scroll,
-      scrollDirection: Axis.horizontal,
-      child: skyline,
-    );
   }
 
-  double _frontierOffset(double slot, double width, double contentWidth) {
-    final i = widget.buildings.indexWhere((b) => b.state == BuildingState.open);
-    if (i < 0) return 0;
-    return (i * slot - (width - slot) / 2).clamp(0, contentWidth - width);
-  }
-
+  /// The whole building column is the tap target.
   Widget _target(int i) {
-    final id = widget.districtIds[i];
-    final b = widget.buildings[i];
-    final n = levelNumber(widget.allIds, id);
+    final id = districtIds[i];
+    final b = buildings[i];
+    final n = levelNumber(allIds, id);
     final label = switch (b.state) {
       BuildingState.locked => 'Level $n, locked',
       BuildingState.open => 'Level $n, open',
       BuildingState.solved => 'Level $n, solved, ${b.stars} stars',
     };
-    final onTap = b.state == BuildingState.locked
-        ? null
-        : () => widget.onOpen(id);
+    final onTap = b.state == BuildingState.locked ? null : () => onOpen(id);
     final ink = switch (b.state) {
-      BuildingState.locked => Colors.white24,
+      BuildingState.locked => Colors.white38,
       BuildingState.open => Colors.white70,
       BuildingState.solved => Colors.white,
     };
@@ -241,21 +208,29 @@ class _DistrictPanelState extends State<_DistrictPanel> {
       label: label,
       onTap: onTap,
       excludeSemantics: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: SizedBox(
-            height: _labelHeight,
-            child: Center(
-              child: Text(
-                '$n',
-                style: TextStyle(
-                  color: ink,
-                  fontWeight: b.state == BuildingState.solved
-                      ? FontWeight.bold
-                      : FontWeight.normal,
+      // A transparent Material above the painter, so the press shows.
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          splashColor: Colors.white24,
+          highlightColor: Colors.white10,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: _labelHeight,
+              child: Center(
+                child: Text(
+                  '$n',
+                  style: TextStyle(
+                    color: ink,
+                    // Two digits fit a 28 px column.
+                    fontSize: 12,
+                    fontWeight: b.state == BuildingState.solved
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
                 ),
               ),
             ),
@@ -267,16 +242,20 @@ class _DistrictPanelState extends State<_DistrictPanel> {
 }
 
 class _SkylinePainter extends CustomPainter {
-  _SkylinePainter(this.buildings);
+  _SkylinePainter(this.buildings, this.seed);
 
   final List<Building> buildings;
+  final int seed;
 
   @override
-  void paint(Canvas canvas, Size size) => paintSkyline(canvas, size, buildings);
+  void paint(Canvas canvas, Size size) =>
+      paintSkyline(canvas, size, buildings, seed: seed);
 
   @override
   bool shouldRepaint(_SkylinePainter old) {
-    if (old.buildings.length != buildings.length) return true;
+    if (old.seed != seed || old.buildings.length != buildings.length) {
+      return true;
+    }
     for (var i = 0; i < buildings.length; i++) {
       final a = old.buildings[i];
       final b = buildings[i];

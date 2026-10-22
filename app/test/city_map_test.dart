@@ -16,7 +16,19 @@ import 'support/fake_ad_service.dart';
 const _frame = Duration(milliseconds: 200);
 const _skipKey = Key('story-skip');
 
-Future<AppServices> _services(WidgetTester t) async {
+/// A fresh platform bundle whose story asset is an empty JSON object.
+class _BrokenStoryBundle extends PlatformAssetBundle {
+  @override
+  Future<String> loadString(String key, {bool cache = true}) {
+    if (key == StoryRepository.path) return Future.value('{}');
+    return super.loadString(key, cache: cache);
+  }
+}
+
+Future<AppServices> _services(
+  WidgetTester t, {
+  AssetBundle? storyBundle,
+}) async {
   SharedPreferences.setMockInitialValues({});
   final progress = (await t.runAsync(ProgressRepository.open))!;
   return AppServices(
@@ -24,7 +36,7 @@ Future<AppServices> _services(WidgetTester t) async {
     progress: progress,
     ads: FakeAdService(),
     audio: const SilentAudioService(),
-    story: StoryRepository(PlatformAssetBundle()),
+    story: StoryRepository(storyBundle ?? PlatformAssetBundle()),
   );
 }
 
@@ -174,20 +186,43 @@ void main() {
     expect(find.text('Thanks for playing.', skipOffstage: false), findsNothing);
   });
 
-  testWidgets('every building target is at least 44 wide at 320x640', (
-    t,
-  ) async {
-    t.view.physicalSize = const Size(320, 640);
-    t.view.devicePixelRatio = 1;
-    addTearDown(t.view.reset);
-    final services = await _services(t);
-    final ids = (await t.runAsync(services.levels.levelIds))!;
+  for (final size in const [Size(320, 640), Size(360, 800)]) {
+    testWidgets('every district fits ${size.width.toInt()} px, no sideways '
+        'scroll', (t) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final services = await _services(t);
+      final ids = (await t.runAsync(services.levels.levelIds))!;
+      await _pumpMap(t, services);
+      expect(t.takeException(), isNull);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Scrollable &&
+              axisDirectionToAxis(w.axisDirection) == Axis.horizontal,
+        ),
+        findsNothing,
+      );
+      for (final id in ids) {
+        final target = find.byKey(ValueKey('building-$id'));
+        expect(target, findsOneWidget, reason: id);
+        final rect = t.getRect(target);
+        expect(rect.width, greaterThanOrEqualTo(28), reason: id);
+        expect(rect.height, greaterThanOrEqualTo(88), reason: id);
+        expect(rect.left, greaterThanOrEqualTo(0), reason: id);
+        expect(rect.right, lessThanOrEqualTo(size.width), reason: id);
+      }
+    });
+  }
+
+  testWidgets('a broken story falls back to chapter titles', (t) async {
+    _tallView(t);
+    final services = await _services(t, storyBundle: _BrokenStoryBundle());
     await _pumpMap(t, services);
-    expect(t.takeException(), isNull);
-    for (final id in ids) {
-      final target = find.byKey(ValueKey('building-$id'), skipOffstage: false);
-      expect(target, findsOneWidget, reason: id);
-      expect(t.getSize(target).width, greaterThanOrEqualTo(44), reason: id);
+    for (final title in ['Chapter 1', 'Chapter 2', 'Chapter 3']) {
+      expect(find.text(title), findsOneWidget);
     }
+    expect(find.text('The Outskirts'), findsNothing);
   });
 }

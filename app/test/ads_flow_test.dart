@@ -238,8 +238,8 @@ void main() {
     await t.scrollUntilVisible(
       building,
       200,
-      // The map's vertical scroll; the skylines only scroll when narrow.
-      scrollable: find.byType(Scrollable).first,
+      // The map's vertical scroll, its only scrollable.
+      scrollable: find.byType(Scrollable),
     );
     await t.pump(_frame);
     await t.tap(building);

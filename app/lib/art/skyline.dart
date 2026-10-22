@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 
 import '../data/progress_repository.dart';
@@ -40,13 +41,21 @@ const _accents = [
   palette.doorClosed, // purple
   palette.platePressed, // neon green
 ];
-const _windowLight = Color(0xFFFFE7A3);
-const _lockedFill = Color(0xFF0C1322);
-const _farFill = Color(0xFF0A101D);
+
+/// The pane colour of a lit window; tests count panes drawn in it.
+@visibleForTesting
+const skylineWindowLight = Color(0xFFFFE7A3);
+const _windowLight = skylineWindowLight;
+// Locked buildings are dark silhouettes with a faint rim, a clear step
+// above the far layer, which sits just above the panel colour.
+const _lockedFill = Color(0xFF162036);
+const _lockedRim = Color(0xFF24345A);
+const _farFill = Color(0xFF0C1324);
 const _openFill = Color(0xFF0A1120);
 
 /// Draws [buildings] left to right across [size], one equal slot each, on a
-/// ground line at the bottom. Heights, widths and roofs are seeded by index,
+/// ground line at the bottom. Heights, widths and roofs are seeded by index
+/// and [seed] (one per district, so each has its own silhouette),
 /// so the skyline is the same every frame.
 ///
 /// Locked buildings are near-invisible silhouettes, open ones a dim neon
@@ -57,21 +66,23 @@ void paintSkyline(
   Size size,
   List<Building> buildings, {
   bool allLit = false,
+  int seed = 0,
 }) {
   if (size.isEmpty) return;
-  _paintFarLayer(canvas, size, buildings.length, allLit);
+  _paintFarLayer(canvas, size, buildings.length, allLit, seed);
   final n = buildings.length;
   if (n > 0) {
     final slot = size.width / n;
     for (var i = 0; i < n; i++) {
-      _paintBuilding(canvas, size, i, slot, buildings[i], allLit);
+      _paintBuilding(canvas, size, i, slot, buildings[i], allLit, seed);
     }
   }
   _paintGround(canvas, size, allLit);
 }
 
 /// A deterministic value in [0, 1] for index [i] and channel [salt].
-double _noise(int i, int salt) {
+double _noise(int i, int salt, [int seed = 0]) {
+  i += seed * 1009;
   var x = (i + 1) * 73856093 ^ (salt + 7) * 19349663;
   x = (x ^ (x >> 13)) * 1274126177;
   x ^= x >> 16;
@@ -79,19 +90,19 @@ double _noise(int i, int salt) {
 }
 
 /// Low background blocks give the skyline depth.
-void _paintFarLayer(Canvas canvas, Size size, int n, bool allLit) {
+void _paintFarLayer(Canvas canvas, Size size, int n, bool allLit, int seed) {
   final count = math.max(6, n * 2);
   final step = size.width / count;
   final fill = Paint()..color = _farFill;
   final dot = Paint()..color = _windowLight.withValues(alpha: 0.25);
   for (var j = 0; j < count; j++) {
-    final w = step * (0.9 + 0.5 * _noise(j, 11));
-    final h = size.height * (0.22 + 0.3 * _noise(j, 12));
+    final w = step * (0.9 + 0.5 * _noise(j, 11, seed));
+    final h = size.height * (0.22 + 0.3 * _noise(j, 12, seed));
     final rect = Rect.fromLTWH(j * step - w * 0.2, size.height - h, w, h);
     canvas.drawRect(rect, fill);
     if (allLit && rect.width > 6) {
       for (var y = rect.top + 5; y < rect.bottom - 4; y += 7) {
-        if (_noise(j, y.round()) > 0.55) {
+        if (_noise(j, y.round(), seed) > 0.55) {
           canvas.drawRect(Rect.fromLTWH(rect.center.dx - 1, y, 2, 2), dot);
         }
       }
@@ -126,14 +137,15 @@ void _paintBuilding(
   double slot,
   Building b,
   bool allLit,
+  int seed,
 ) {
   final ground = size.height;
-  final w = math.max(2.0, slot * (0.56 + 0.32 * _noise(i, 1)));
-  final h = size.height * (0.4 + 0.44 * _noise(i, 2));
+  final w = math.max(2.0, slot * (0.56 + 0.32 * _noise(i, 1, seed)));
+  final h = size.height * (0.4 + 0.44 * _noise(i, 2, seed));
   final left = i * slot + (slot - w) / 2;
   final body = Rect.fromLTWH(left, ground - h, w, h);
-  final roof = (_noise(i, 3) * 3).floor();
-  final accent = _accents[i % _accents.length];
+  final roof = (_noise(i, 3, seed) * 3).floor();
+  final accent = _accents[(i + seed * 2) % _accents.length];
 
   var shape = Path()..addRect(body);
   if (roof == 1) {
@@ -153,12 +165,19 @@ void _paintBuilding(
   switch (state) {
     case BuildingState.locked:
       canvas.drawPath(shape, Paint()..color = _lockedFill);
+      canvas.drawPath(
+        shape,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = _lockedRim
+          ..strokeWidth = 1,
+      );
       if (roof == 2) {
         canvas.drawLine(
           antennaBase,
           antennaTip,
           Paint()
-            ..color = _lockedFill
+            ..color = _lockedRim
             ..strokeWidth = 1.5,
         );
       }
