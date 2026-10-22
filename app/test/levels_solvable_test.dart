@@ -7,6 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('the bundled levels are exactly 1-01 to 3-10', () async {
+    final ids = await LevelRepository(PlatformAssetBundle()).levelIds();
+    expect(ids.toSet(), {
+      for (var c = 1; c <= 3; c++)
+        for (var n = 1; n <= 10; n++) '$c-${'$n'.padLeft(2, '0')}',
+    });
+    expect(ids, hasLength(30));
+  });
+
   test(
     'every bundled level replays its stored solution to bestScore',
     () async {

@@ -37,6 +37,25 @@ void main() {
     ]);
   });
 
+  test('a ghost stepping off the plate closes the door and plays door', () {
+    final level = LevelLoader.fromMap({
+      'id': '1-02',
+      'name': 'Hold the Door',
+      'runLimit': 2,
+      'grid': ['#######', '#S.aAE#', '#######'],
+    });
+    var s = GameState.initial(level);
+    for (final m in [Move.right, Move.right, Move.left]) {
+      s = Rules.step(s, m);
+    }
+    s = Rules.endRun(s);
+    final before = Rules.step(Rules.step(s, Move.wait), Move.wait);
+    expect(before.openDoors, isNotEmpty, reason: 'ghost holds the plate');
+    final after = Rules.step(before, Move.wait);
+    expect(after.openDoors, isEmpty);
+    expect(soundsFor(before, after, GameEvent.moved), [Sfx.move, Sfx.door]);
+  });
+
   test('runEnded and lost play runEnd', () {
     expect(soundsFor(start, start, GameEvent.runEnded), [Sfx.runEnd]);
     expect(soundsFor(start, start, GameEvent.lost), [Sfx.runEnd]);

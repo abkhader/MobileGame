@@ -77,22 +77,22 @@ void main() {
   });
 
   test('--check reports a missing bestScore and a missing solution', () async {
-    put('a.json', level('a', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
     put(
-      'b.json',
-      level('b', ['#######', '#S...E#', '#######'], 1, {'bestScore': 4}),
+      '1-02.json',
+      level('1-02', ['#######', '#S...E#', '#######'], 1, {'bestScore': 4}),
     );
     final (code, out) = await run(['--check']);
     expect(code, 1);
-    expect(out, contains('a.json: FAIL missing bestScore'));
-    expect(out, contains('b.json: FAIL missing solution'));
+    expect(out, contains('1-01.json: FAIL missing bestScore'));
+    expect(out, contains('1-02.json: FAIL missing solution'));
   });
 
   test('--check reports a solution with the wrong score', () async {
     put(
-      'a.json',
+      '1-01.json',
       level(
-        'a',
+        '1-01',
         ['#######', '#S...E#', '#######'],
         1,
         {
@@ -105,58 +105,58 @@ void main() {
     );
     final (code, out) = await run(['--check']);
     expect(code, 1);
-    expect(out, contains('a.json: FAIL solution scores 5, expected 4'));
+    expect(out, contains('1-01.json: FAIL solution scores 5, expected 4'));
   });
 
   test('--check reports an id that does not match the file name', () async {
-    put('x.json', level('y', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-02', ['#######', '#S...E#', '#######'], 1));
     final (code, out) = await run(['--check']);
     expect(code, 1);
-    expect(out, 'x.json: FAIL id \'y\' does not match file name\n');
+    expect(out, '1-01.json: FAIL id \'1-02\' does not match file name\n');
   });
 
   test('--check reports format errors', () async {
-    put('a.json', level('a', ['#######', '#.....#', '#######'], 1));
+    put('1-01.json', level('1-01', ['#######', '#.....#', '#######'], 1));
     final (code, out) = await run(['--check']);
     expect(code, 1);
-    expect(out, 'a.json: FAIL grid must contain exactly one S\n');
+    expect(out, '1-01.json: FAIL grid must contain exactly one S\n');
   });
 
   test('--check reports an unsolvable level', () async {
-    put('a.json', level('a', ['S#E'], 1));
+    put('1-01.json', level('1-01', ['S#E'], 1));
     final (code, out) = await run(['--check']);
     expect(code, 1);
-    expect(out, 'a.json: FAIL unsolvable\n');
+    expect(out, '1-01.json: FAIL unsolvable\n');
   });
 
   test('an unreadable file fails and processing continues', () async {
     File('${dir.path}/bad.json').writeAsBytesSync([0xff, 0xfe, 0xfd]);
-    put('ok.json', level('ok', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
     final (code, out) = await run(['--write']);
     expect(code, 1);
-    expect(out, 'bad.json: FAIL cannot read file\nok.json: OK (best 4)\n');
+    expect(out, '1-01.json: OK (best 4)\nbad.json: FAIL cannot read file\n');
   });
 
   test('--write does not modify a file that fails', () async {
-    put('x.json', level('y', ['#######', '#S...E#', '#######'], 1));
-    final before = File('${dir.path}/x.json').readAsStringSync();
+    put('1-01.json', level('1-02', ['#######', '#S...E#', '#######'], 1));
+    final before = File('${dir.path}/1-01.json').readAsStringSync();
     final (code, _) = await run(['--write']);
     expect(code, 1);
-    expect(File('${dir.path}/x.json').readAsStringSync(), before);
+    expect(File('${dir.path}/1-01.json').readAsStringSync(), before);
   });
 
   test('--max-nodes 10 reports budget exceeded', () async {
-    put('a.json', level('a', ['#######', '#Sa.AE#', '#######'], 2));
+    put('1-03.json', level('1-03', ['#######', '#Sa.AE#', '#######'], 2));
     final (code, out) = await run(['--check', '--max-nodes', '10']);
     expect(code, 1);
-    expect(out, 'a.json: FAIL budget exceeded\n');
+    expect(out, '1-03.json: FAIL budget exceeded\n');
   });
 
   test('files are processed in name order', () async {
-    put('b.json', level('b', ['#######', '#S...E#', '#######'], 1));
-    put('a.json', level('a', ['#######', '#S...E#', '#######'], 1));
+    put('1-02.json', level('1-02', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
     final (_, out) = await run(['--write']);
-    expect(out, 'a.json: OK (best 4)\nb.json: OK (best 4)\n');
+    expect(out, '1-01.json: OK (best 4)\n1-02.json: OK (best 4)\n');
   });
 
   test('an empty directory exits 0 with no output', () async {
@@ -201,10 +201,45 @@ void main() {
       );
     });
 
-    test('ids without a known chapter skip the range check', () async {
-      put('a.json', level('a', ['#######', '#S...E#', '#######'], 1));
-      final (code, _) = await run(['--write']);
+    test('ids outside C-NN with chapter 1-3 and level 01-10 fail', () async {
+      const grid = ['#######', '#S...E#', '#######'];
+      for (final id in ['a', '4-01', '0-01', '1-00', '1-11', '1-1', '01-01']) {
+        put('$id.json', level(id, grid, 1));
+      }
+      final (code, out) = await run(['--write']);
+      expect(code, 1);
+      final lines = out.trimRight().split('\n');
+      expect(lines, hasLength(7));
+      for (final line in lines) {
+        expect(
+          line,
+          matches(
+            RegExp(
+              r"^(\S+)\.json: FAIL id '\1' is not C-NN with chapter 1-3 and level 01-10$",
+            ),
+          ),
+        );
+      }
+    });
+
+    test('a tip on a level other than 1-01 to 1-03 fails', () async {
+      put(
+        '1-04.json',
+        level('1-04', ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
+      );
+      final (code, out) = await run(['--write']);
+      expect(code, 1);
+      expect(out, '1-04.json: FAIL tip only allowed on levels 1-01 to 1-03\n');
+    });
+
+    test('a tip on 1-01 to 1-03 passes', () async {
+      put(
+        '1-01.json',
+        level('1-01', ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
+      );
+      final (code, out) = await run(['--write']);
       expect(code, 0);
+      expect(out, '1-01.json: OK (best 4)\n');
     });
 
     test('a reduced solve that exceeds the budget fails', () async {

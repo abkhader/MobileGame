@@ -11,6 +11,8 @@ const _usage =
     '[--report]';
 
 /// Allowed `runLimit` range (inclusive) per chapter.
+final _levelId = RegExp(r'^[1-3]-(0[1-9]|10)$');
+const _tipIds = {'1-01', '1-02', '1-03'};
 const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4)};
 
 /// Runs the solver CLI and returns the process exit code.
@@ -182,7 +184,7 @@ _Outcome _process(File file, _Options options, int? reducedMaxNodes) {
   }
 }
 
-/// Chapter run range, then the proof that `runLimit - 1` runs do not suffice.
+/// Id format, chapter run range, tip rule, then the proof that `runLimit - 1` runs do not suffice.
 String? _qualityFailure(
   Level level,
   Map<String, dynamic> map,
@@ -190,13 +192,16 @@ String? _qualityFailure(
   int? reducedMaxNodes,
 ) {
   final runs = level.runLimit;
-  final chapter = level.id.split('-').first;
-  final range = _chapterRanges[chapter];
-  if (range != null) {
-    final (lo, hi) = range;
-    if (runs < lo || runs > hi) {
-      return 'runLimit $runs outside chapter $chapter range $lo\u2013$hi';
-    }
+  if (!_levelId.hasMatch(level.id)) {
+    return "id '${level.id}' is not C-NN with chapter 1-3 and level 01-10";
+  }
+  final chapter = level.id.substring(0, 1);
+  final (lo, hi) = _chapterRanges[chapter]!;
+  if (runs < lo || runs > hi) {
+    return 'runLimit $runs outside chapter $chapter range $lo\u2013$hi';
+  }
+  if (level.tip != null && !_tipIds.contains(level.id)) {
+    return 'tip only allowed on levels 1-01 to 1-03';
   }
   if (runs > 1) {
     final reduced = LevelLoader.fromMap(
