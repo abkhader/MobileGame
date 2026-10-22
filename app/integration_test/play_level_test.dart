@@ -11,12 +11,13 @@ import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../test/support/fake_ad_service.dart';
+import '../test/support/story_flags.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('plays level 1 to completion', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(introsSeenPrefs());
     final progress = await ProgressRepository.open();
     await tester.pumpWidget(
       EchoApp(
@@ -33,7 +34,11 @@ void main() {
 
     await tester.tap(find.text('Play'));
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('1'));
+    // Play opens the first unfinished level directly; wait for the board.
+    for (var i = 0; i < 50; i++) {
+      if (find.byKey(const Key('board')).evaluate().isNotEmpty) break;
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     await tester.pump(const Duration(milliseconds: 500));
 
     for (var i = 0; i < 4; i++) {
