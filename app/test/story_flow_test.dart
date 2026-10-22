@@ -3,9 +3,9 @@ import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
+import 'package:echo_app/screens/city_map_screen.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_app/screens/level_complete_screen.dart';
-import 'package:echo_app/screens/level_select_screen.dart';
 import 'package:echo_app/screens/story_card_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +17,8 @@ import 'support/fake_ad_service.dart';
 const _frame = Duration(milliseconds: 200);
 const _skipKey = Key('story-skip');
 final _board = find.byKey(const Key('board'));
+final _level1 = find.bySemanticsLabel('Level 1, open');
+final _map = find.text('Lumen City');
 
 /// A fresh platform bundle whose story asset is an empty JSON object.
 class _BrokenStoryBundle extends PlatformAssetBundle {
@@ -58,9 +60,9 @@ Future<void> _tapAndSettle(WidgetTester t, Finder f) async {
   await _settle(t);
 }
 
-/// Pumps Level Select as the map and waits for its tiles.
+/// Pumps the city map and waits for its buildings.
 Future<void> _pumpMap(WidgetTester t, AppServices services) async {
-  await t.pumpWidget(MaterialApp(home: LevelSelectScreen(services: services)));
+  await t.pumpWidget(MaterialApp(home: CityMapScreen(services: services)));
   await _settle(t);
 }
 
@@ -101,7 +103,7 @@ void main() {
   testWidgets('first open of 1-01 shows the Outskirts card once', (t) async {
     final services = await _services(t);
     await _pumpMap(t, services);
-    await _tapAndSettle(t, find.text('1'));
+    await _tapAndSettle(t, _level1);
     expect(find.text('The Outskirts'), findsOneWidget);
     expect(find.byType(GameScreen), findsNothing);
     for (var i = 0; i < 3; i++) {
@@ -117,7 +119,7 @@ void main() {
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     expect(find.byType(GameScreen), findsNothing);
-    await _tapAndSettle(t, find.text('1'));
+    await _tapAndSettle(t, _level1);
     expect(find.byType(GameScreen), findsOneWidget);
     expect(find.text('The Outskirts'), findsNothing);
   });
@@ -125,7 +127,7 @@ void main() {
   testWidgets('skip goes straight to the level', (t) async {
     final services = await _services(t);
     await _pumpMap(t, services);
-    await _tapAndSettle(t, find.text('1'));
+    await _tapAndSettle(t, _level1);
     expect(find.text('The Outskirts'), findsOneWidget);
     await _tapAndSettle(t, find.byKey(_skipKey));
     expect(find.byType(GameScreen), findsOneWidget);
@@ -136,7 +138,7 @@ void main() {
   testWidgets('Retry after a win replays the level with no card', (t) async {
     final services = await _services(t);
     await _pumpMap(t, services);
-    await _tapAndSettle(t, find.text('1'));
+    await _tapAndSettle(t, _level1);
     await _tapAndSettle(t, find.byKey(_skipKey));
     // Level 1-01 is won by four moves right.
     for (var i = 0; i < 4; i++) {
@@ -192,7 +194,7 @@ void main() {
   testWidgets('broken story opens the level', (t) async {
     final services = await _services(t, storyBundle: _BrokenStoryBundle());
     await _pumpMap(t, services);
-    await _tapAndSettle(t, find.text('1'));
+    await _tapAndSettle(t, _level1);
     expect(find.byType(StoryCardScreen), findsNothing);
     expect(find.text('The Outskirts'), findsNothing);
     expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-01');
@@ -211,14 +213,14 @@ void main() {
     await _tapAndSettle(t, find.byKey(_skipKey));
     expect(find.byType(StoryCardScreen), findsNothing);
     expect(find.byType(LevelCompleteScreen), findsNothing);
-    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(_map, findsOneWidget);
     expect(services.progress.endingSeen, isTrue);
 
     await _pushLevelComplete(t, services, '3-10');
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.text('Thanks for playing.'), findsNothing);
     expect(find.byType(LevelCompleteScreen), findsNothing);
-    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(_map, findsOneWidget);
   });
 
   testWidgets('Levels on an earlier level shows no ending', (t) async {
@@ -227,7 +229,7 @@ void main() {
     await _pushLevelComplete(t, services, '1-01');
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.byType(StoryCardScreen), findsNothing);
-    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(_map, findsOneWidget);
     expect(services.progress.endingSeen, isFalse);
   });
 

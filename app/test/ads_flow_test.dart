@@ -215,9 +215,7 @@ void main() {
     expect(_echoBoard(t).hintPath, isNotNull);
   });
 
-  testWidgets('Skip on the last level returns to the existing Level Select', (
-    t,
-  ) async {
+  testWidgets('Skip on the last level returns to the existing map', (t) async {
     final ads = FakeAdService();
     final services = await _services(t, ads);
     final ids = (await t.runAsync(services.levels.levelIds))!;
@@ -233,16 +231,18 @@ void main() {
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);
-    // The last level's tile can sit below the 800x600 test viewport, beyond
-    // what the lazy list has built, so scroll until it exists.
+    final n = levelNumber(ids, last);
+    final building = find.bySemanticsLabel('Level $n, open');
+    // The last building sits below the 800x600 test viewport, outside the
+    // semantics tree until it scrolls into view.
     await t.scrollUntilVisible(
-      find.text('${levelNumber(ids, last)}'),
+      building,
       200,
-      // The outer level list; each chapter's grid is a Scrollable too.
+      // The map's vertical scroll; the skylines only scroll when narrow.
       scrollable: find.byType(Scrollable).first,
     );
     await t.pump(_frame);
-    await t.tap(find.text('${levelNumber(ids, last)}'));
+    await t.tap(building);
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);
@@ -251,12 +251,14 @@ void main() {
     await _settle(t);
     await t.pump(const Duration(milliseconds: 500));
     expect(find.byType(GameScreen), findsNothing);
-    expect(find.text(chapterOf(last)), findsOneWidget);
+    expect(find.text('Lumen City'), findsOneWidget);
     expect(services.progress.progressOf(last).completed, isTrue);
+    // A skipped level is solved with no stars.
+    expect(find.bySemanticsLabel('Level $n, solved, 0 stars'), findsOneWidget);
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
-    expect(find.text(chapterOf(last)), findsNothing);
+    expect(find.text('Lumen City'), findsNothing);
     expect(find.text('Play'), findsOneWidget);
   });
 }

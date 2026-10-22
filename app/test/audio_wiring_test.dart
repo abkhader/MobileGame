@@ -149,7 +149,7 @@ void main() {
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     expect(audio.startMusicCalls, 2);
-    expect(find.text('Levels'), findsOneWidget);
+    expect(find.text('Lumen City'), findsOneWidget);
     expect(t.takeException(), isNull);
   });
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../art/pip.dart';
+import '../art/skyline.dart';
 import '../game/palette.dart' as palette;
 
 /// A full-screen story card: a title and lines that appear one at a time.
@@ -54,8 +56,9 @@ class _StoryCardScreenState extends State<StoryCardScreen> {
         onTap: _advance,
         child: Stack(
           children: [
-            // Task 4 paints the skyline and Pip here (lit when litSkyline).
-            const Positioned.fill(child: ColoredBox(color: palette.background)),
+            Positioned.fill(
+              child: CustomPaint(painter: _ScenePainter(widget.litSkyline)),
+            ),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
@@ -111,4 +114,41 @@ class _StoryCardScreenState extends State<StoryCardScreen> {
       ),
     );
   }
+}
+
+/// The card's backdrop: a skyline along the bottom with Pip in front. Dark
+/// with a few outlined buildings, or fully lit for the ending.
+class _ScenePainter extends CustomPainter {
+  _ScenePainter(this.lit);
+
+  final bool lit;
+
+  static const _count = 12;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = palette.background);
+    final height = size.height * 0.34;
+    final top = size.height - height;
+    final buildings = [
+      for (var i = 0; i < _count; i++)
+        Building(
+          state: i == 2 || i == 10 ? BuildingState.open : BuildingState.locked,
+        ),
+    ];
+    canvas.save();
+    canvas.translate(0, top);
+    paintSkyline(canvas, Size(size.width, height), buildings, allLit: lit);
+    canvas.restore();
+    final radius = (size.shortestSide * 0.07).clamp(14.0, 40.0);
+    paintPip(
+      canvas,
+      Offset(size.width / 2, size.height - radius * 1.25),
+      radius,
+      palette.player,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ScenePainter old) => old.lit != lit;
 }

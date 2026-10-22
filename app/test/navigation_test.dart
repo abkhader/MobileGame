@@ -17,6 +17,9 @@ import 'support/story_flags.dart';
 
 const _frame = Duration(milliseconds: 200);
 final _board = find.byKey(const Key('board'));
+final _level1 = find.bySemanticsLabel('Level 1, open');
+final _locked = find.bySemanticsLabel(RegExp(r'^Level \d+, locked$'));
+final _map = find.text('Lumen City');
 
 Future<AppServices> _services(WidgetTester t) async {
   SharedPreferences.setMockInitialValues(introsSeenPrefs());
@@ -38,8 +41,8 @@ Future<void> _pumpHome(WidgetTester t, AppServices services) async {
   await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
 }
 
-/// Makes the test view tall enough for Level Select to build every level
-/// tile, so lock icons can be counted across all chapters.
+/// Makes the test view tall enough to show every district of the map, so
+/// locked buildings can be counted across all chapters.
 void _showAllLevels(WidgetTester t) {
   t.view.physicalSize = const Size(800, 4000);
   t.view.devicePixelRatio = 1;
@@ -52,7 +55,7 @@ Future<void> _tapAndPump(WidgetTester t, Finder f) async {
   await t.pump(const Duration(milliseconds: 500));
 }
 
-Future<void> _openLevelSelect(WidgetTester t) async {
+Future<void> _openMap(WidgetTester t) async {
   await _tapAndPump(t, find.text('Play'));
   // Level ids load from the asset bundle, which needs real async.
   await t.runAsync(
@@ -116,20 +119,21 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Play shows Chapter 1 with level 1 unlocked, 2 and 3 locked', (
+  testWidgets('Play shows the map with level 1 open, 2 and 3 locked', (
     t,
   ) async {
     _showAllLevels(t);
     final services = await _services(t);
     final ids = await _levelIds(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    expect(find.text('Chapter 1'), findsOneWidget);
-    expect(find.text('1'), findsOneWidget);
+    await _openMap(t);
+    expect(_map, findsOneWidget);
+    expect(find.text('The Outskirts'), findsOneWidget);
+    expect(_level1, findsOneWidget);
     // Every level except the first is locked.
-    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 1));
-    expect(find.text('2'), findsNothing);
-    expect(find.text('3'), findsNothing);
+    expect(_locked, findsNWidgets(ids.length - 1));
+    expect(find.bySemanticsLabel('Level 2, locked'), findsOneWidget);
+    expect(find.bySemanticsLabel('Level 3, locked'), findsOneWidget);
   });
 
   testWidgets('winning level 1 saves progress and shows Level complete', (
@@ -137,8 +141,8 @@ void main() {
   ) async {
     final services = await _services(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    await _tapAndPump(t, _level1);
     await _winLevel1(t);
     expect(find.text('Level complete'), findsOneWidget);
     expect(services.progress.progressOf('1-01').stars, 3);
@@ -158,8 +162,8 @@ void main() {
       story: real.story,
     );
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    await _tapAndPump(t, _level1);
     await _winLevel1(t);
     expect(find.text('Level complete'), findsNothing);
     expect(services.completedThisSession, 0);
@@ -175,14 +179,14 @@ void main() {
     expect(reopened.progressOf('1-01').stars, 3);
   });
 
-  testWidgets('Next opens level 2; Level Select shows progress', (t) async {
+  testWidgets('Next opens level 2; the map shows progress', (t) async {
     _showAllLevels(t);
     final services = await _services(t);
     final ids = await _levelIds(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 1));
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    expect(_locked, findsNWidgets(ids.length - 1));
+    await _tapAndPump(t, _level1);
     await _winLevel1(t);
     await _tapAndPump(t, find.text('Next'));
     await t.runAsync(
@@ -193,10 +197,11 @@ void main() {
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
-    expect(find.text('Chapter 1'), findsOneWidget);
-    // Winning level 1 unlocked level 2: one lock fewer.
-    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 2));
-    expect(find.byIcon(Icons.star), findsNWidgets(3));
+    expect(_map, findsOneWidget);
+    // Winning level 1 unlocked level 2: one locked building fewer.
+    expect(_locked, findsNWidgets(ids.length - 2));
+    expect(find.bySemanticsLabel('Level 1, solved, 3 stars'), findsOneWidget);
+    expect(find.bySemanticsLabel('Level 2, open'), findsOneWidget);
   });
 
   testWidgets('Levels after a Next chain shows the latest progress', (t) async {
@@ -204,8 +209,8 @@ void main() {
     final services = await _services(t);
     final ids = await _levelIds(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    await _tapAndPump(t, _level1);
     await _winLevel1(t);
     await _tapAndPump(t, find.text('Next'));
     await t.runAsync(
@@ -217,11 +222,12 @@ void main() {
     await _winLevel1(t);
     expect(find.text('Level complete'), findsOneWidget);
     await _tapAndPump(t, find.text('Levels'));
-    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(_map, findsOneWidget);
     // Levels 1-3 are unlocked after winning 1 and 2; the rest stay locked.
-    expect(find.byIcon(Icons.lock), findsNWidgets(ids.length - 3));
-    expect(find.text('3'), findsOneWidget);
-    expect(find.byIcon(Icons.star), findsNWidgets(6));
+    expect(_locked, findsNWidgets(ids.length - 3));
+    expect(find.bySemanticsLabel('Level 3, open'), findsOneWidget);
+    expect(find.bySemanticsLabel('Level 1, solved, 3 stars'), findsOneWidget);
+    expect(find.bySemanticsLabel('Level 2, solved, 3 stars'), findsOneWidget);
   });
 
   testWidgets('a win with the overflow menu open replaces the game route', (
@@ -229,8 +235,8 @@ void main() {
   ) async {
     final services = await _services(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    await _tapAndPump(t, _level1);
     for (var i = 0; i < 4; i++) {
       await t.fling(_board, const Offset(300, 0), 1000);
       await t.pump(const Duration(milliseconds: 50));
@@ -249,8 +255,8 @@ void main() {
   testWidgets('Retry reopens the same level at Moves 0', (t) async {
     final services = await _services(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    await _tapAndPump(t, _level1);
     await _winLevel1(t);
     await _tapAndPump(t, find.text('Retry'));
     await t.runAsync(
@@ -260,14 +266,14 @@ void main() {
     expect(find.text('Moves 0'), findsOneWidget);
   });
 
-  testWidgets('Levels returns to Level Select', (t) async {
+  testWidgets('Levels returns to the map', (t) async {
     final services = await _services(t);
     await _pumpHome(t, services);
-    await _openLevelSelect(t);
-    await _tapAndPump(t, find.text('1'));
+    await _openMap(t);
+    await _tapAndPump(t, _level1);
     await _winLevel1(t);
     await _tapAndPump(t, find.text('Levels'));
-    expect(find.text('Chapter 1'), findsOneWidget);
+    expect(_map, findsOneWidget);
   });
 
   testWidgets('the last level has no Next button', (t) async {

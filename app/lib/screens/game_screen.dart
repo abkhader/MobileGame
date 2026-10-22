@@ -149,7 +149,7 @@ class _GameScreenState extends State<GameScreen> {
       final i = ids.indexOf(widget.levelId);
       final nextId = i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
       if (nextId == null) {
-        // Back to the Level Select underneath.
+        // Back to the city map underneath.
         Navigator.of(context).pop();
       } else {
         // Replaces this game route, even with a menu above it.

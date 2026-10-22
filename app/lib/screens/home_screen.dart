@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app_services.dart';
-import 'level_select_screen.dart';
+import 'city_map_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -45,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _startMusic();
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => LevelSelectScreen(services: services),
+                    builder: (_) => CityMapScreen(services: services),
                   ),
                 );
               },
