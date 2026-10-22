@@ -193,9 +193,7 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
-  testWidgets('Play shows the map with level 1 open, 2 and 3 locked', (
-    t,
-  ) async {
+  testWidgets('Map shows the map with level 1 open, 2 and 3 locked', (t) async {
     _showAllLevels(t);
     final services = await _services(t);
     final ids = await _levelIds(t);

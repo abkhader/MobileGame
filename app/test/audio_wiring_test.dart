@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/story_flags.dart';
 import 'support/fake_audio_service.dart';
 
 const _frame = Duration(milliseconds: 200);
@@ -141,14 +142,20 @@ void main() {
 
   testWidgets('a failing audio backend does not break Home', (t) async {
     final audio = FakeAudioService(throws: true);
-    final services = await _services(t, audio);
+    final services = await _services(t, audio, prefs: introsSeenPrefs());
     await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
     await t.pump(_frame);
     expect(audio.startMusicCalls, 1);
     await t.tap(find.text('Play'));
     await t.pump(_frame);
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
-    expect(audio.startMusicCalls, 2);
+    // Home start, the Play tap, and the opened level's own retry.
+    expect(audio.startMusicCalls, 3);
+    expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-01');
     expect(t.takeException(), isNull);
   });
 

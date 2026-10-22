@@ -13,6 +13,7 @@ import 'settings_screen.dart';
 /// How long Pip's eye stays shut, and how often it blinks.
 const _blinkEvery = Duration(seconds: 4);
 const _blinkFor = Duration(milliseconds: 150);
+final _blinkStart = 1 - _blinkFor.inMilliseconds / _blinkEvery.inMilliseconds;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.services, super.key});
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen>
     vsync: this,
     duration: _blinkEvery,
   );
+  final ValueNotifier<bool> _eyeOpen = ValueNotifier(true);
   List<String>? _ids;
 
   AppServices get services => widget.services;
@@ -36,14 +38,22 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
+    _blink.addListener(_onBlinkTick);
     _blink.repeat();
     _startMusic();
     unawaited(_loadIds());
   }
 
+  /// Flips [_eyeOpen] only when the eye changes state, so Pip repaints twice
+  /// per cycle instead of every frame.
+  void _onBlinkTick() {
+    _eyeOpen.value = _blink.value < _blinkStart;
+  }
+
   @override
   void dispose() {
     _blink.dispose();
+    _eyeOpen.dispose();
     super.dispose();
   }
 
@@ -125,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen>
                 RepaintBoundary(
                   child: CustomPaint(
                     size: const Size(120, 120),
-                    painter: _PipPainter(_blink),
+                    painter: _PipPainter(_eyeOpen),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -173,27 +183,23 @@ class _SkylinePainter extends CustomPainter {
 }
 
 /// Pip with an eye that shuts for [_blinkFor] at the end of every
-/// [_blinkEvery]; repaints from the animation, never via setState.
+/// [_blinkEvery]; repaints only when [eyeOpen] flips.
 class _PipPainter extends CustomPainter {
-  _PipPainter(this.blink) : super(repaint: blink);
+  _PipPainter(this.eyeOpen) : super(repaint: eyeOpen);
 
-  final Animation<double> blink;
+  final ValueNotifier<bool> eyeOpen;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final windowStart =
-        1 - _blinkFor.inMilliseconds / _blinkEvery.inMilliseconds;
-    final v = blink.value;
-    final eyeOpen = v < windowStart ? 1.0 : 0.0;
     paintPip(
       canvas,
       size.center(Offset.zero),
       size.shortestSide * 0.38,
-      palette.ghostColors[0],
-      eyeOpen: eyeOpen,
+      palette.player,
+      eyeOpen: eyeOpen.value ? 1.0 : 0.0,
     );
   }
 
   @override
-  bool shouldRepaint(_PipPainter old) => old.blink != blink;
+  bool shouldRepaint(_PipPainter old) => old.eyeOpen != eyeOpen;
 }
