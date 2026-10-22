@@ -5,6 +5,7 @@ import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/screens/city_map_screen.dart';
 import 'package:echo_app/screens/game_screen.dart';
+import 'package:echo_app/screens/home_screen.dart';
 import 'package:echo_app/screens/level_complete_screen.dart';
 import 'package:echo_app/screens/story_card_screen.dart';
 import 'package:flutter/material.dart';
@@ -280,5 +281,46 @@ void main() {
     expect(t.takeException(), isNull);
     expect(find.text(chapter.lines.last), findsOneWidget);
     expect(find.byKey(_skipKey), findsOneWidget);
+  });
+
+  testWidgets('Play on a fresh install shows the card, then 1-01', (t) async {
+    final services = await _services(t);
+    await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
+    await _tapAndSettle(t, find.text('Play'));
+    expect(find.text('The Outskirts'), findsOneWidget);
+    await _tapAndSettle(t, find.byKey(_skipKey));
+    expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-01');
+  });
+
+  testWidgets('two quick taps on Play stack one card', (t) async {
+    final services = await _services(t);
+    await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
+    await t.tap(find.text('Play'));
+    await t.pump(const Duration(milliseconds: 10));
+    await t.tap(find.text('Play'), warnIfMissed: false);
+    await t.pump(_frame);
+    await _settle(t);
+    expect(find.text('The Outskirts'), findsOneWidget);
+    expect(find.byType(CityMapScreen, skipOffstage: false), findsOneWidget);
+    await _tapAndSettle(t, find.byKey(_skipKey));
+    expect(find.byType(GameScreen), findsOneWidget);
+    await t.binding.handlePopRoute();
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.byType(StoryCardScreen), findsNothing);
+    expect(find.byType(GameScreen), findsNothing);
+    expect(_map, findsOneWidget);
+  });
+
+  testWidgets('Back on the ending card still marks it seen', (t) async {
+    final services = await _services(t);
+    await _pumpMap(t, services);
+    await _pushLevelComplete(t, services, '3-10');
+    await _tapAndSettle(t, find.text('Levels'));
+    expect(find.text('Thanks for playing.'), findsOneWidget);
+    await t.binding.handlePopRoute();
+    await t.pump(_frame);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(services.progress.endingSeen, isTrue);
   });
 }

@@ -33,6 +33,16 @@ class _ThrowingBundle extends AssetBundle {
       throw StateError('boom');
 }
 
+class _CountingBundle extends _ThrowingBundle {
+  int loads = 0;
+
+  @override
+  Future<String> loadString(String key, {bool cache = true}) {
+    loads++;
+    return super.loadString(key, cache: cache);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -51,6 +61,14 @@ void main() {
       'Its name is Pip.',
     );
     expect(story.ending.last, 'Thanks for playing.');
+  });
+
+  test('a failed load is cached and not retried', () async {
+    final bundle = _CountingBundle();
+    final repo = StoryRepository(bundle);
+    expect(await repo.load(), isNull);
+    expect(await repo.load(), isNull);
+    expect(bundle.loads, 1);
   });
 
   test('malformed story gives null', () async {

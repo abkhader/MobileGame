@@ -23,16 +23,19 @@ class StoryRepository {
 
   final AssetBundle _bundle;
   Story? _cached;
+  bool _failed = false;
 
   /// The bundled story, or null if the asset is missing or malformed.
-  /// Never throws; a successful load is cached.
+  /// Never throws; both a success and a failure are cached.
   Future<Story?> load() async {
     final cached = _cached;
     if (cached != null) return cached;
+    if (_failed) return null;
     try {
       final decoded = jsonDecode(await _bundle.loadString(path));
       return _cached = _parse(decoded);
     } catch (_) {
+      _failed = true;
       return null;
     }
   }

@@ -13,7 +13,6 @@ import 'settings_screen.dart';
 /// How long Pip's eye stays shut, and how often it blinks.
 const _blinkEvery = Duration(seconds: 4);
 const _blinkFor = Duration(milliseconds: 150);
-final _blinkStart = 1 - _blinkFor.inMilliseconds / _blinkEvery.inMilliseconds;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.services, super.key});
@@ -24,35 +23,34 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _blink = AnimationController(
-    vsync: this,
-    duration: _blinkEvery,
-  );
+class _HomeScreenState extends State<HomeScreen> {
   final ValueNotifier<bool> _eyeOpen = ValueNotifier(true);
+  Timer? _blinkTimer;
+  Timer? _reopenTimer;
   List<String>? _ids;
+  bool _playing = false;
 
   AppServices get services => widget.services;
 
   @override
   void initState() {
     super.initState();
-    _blink.addListener(_onBlinkTick);
-    _blink.repeat();
+    // Two timers flip the eye twice per cycle; no per-frame ticker.
+    _blinkTimer = Timer.periodic(_blinkEvery, (_) {
+      _eyeOpen.value = false;
+      _reopenTimer?.cancel();
+      _reopenTimer = Timer(_blinkFor, () => _eyeOpen.value = true);
+    });
     _startMusic();
     unawaited(_loadIds());
-  }
-
-  /// Flips [_eyeOpen] only when the eye changes state, so Pip repaints twice
-  /// per cycle instead of every frame.
-  void _onBlinkTick() {
-    _eyeOpen.value = _blink.value < _blinkStart;
+    // Warm the story so the first chapter card appears without a wait.
+    unawaited(services.story.load());
   }
 
   @override
   void dispose() {
-    _blink.dispose();
+    _blinkTimer?.cancel();
+    _reopenTimer?.cancel();
     _eyeOpen.dispose();
     super.dispose();
   }
@@ -73,32 +71,43 @@ class _HomeScreenState extends State<HomeScreen>
     unawaited(services.audio.startMusic().catchError((_) {}));
   }
 
-  void _openMap() {
-    Navigator.of(context).push(
+  Future<void> _openMap() {
+    return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CityMapScreen(services: services),
       ),
     );
   }
 
-  /// Opens the first level that is unlocked and not yet solved, or the map
-  /// when there is none.
+  /// Opens the first level that is unlocked and not yet solved on top of the
+  /// map, so every "back to levels" lands on the map; opens just the map when
+  /// there is none or the levels cannot be read.
   Future<void> _play() async {
-    _startMusic();
-    final ids = _ids ?? await services.levels.levelIds();
-    if (!mounted) return;
-    final progress = services.progress;
-    String? next;
-    for (final id in ids) {
-      if (!progress.progressOf(id).completed && progress.isUnlocked(id, ids)) {
-        next = id;
-        break;
+    if (_playing) return;
+    _playing = true;
+    try {
+      _startMusic();
+      List<String> ids;
+      try {
+        ids = _ids ?? await services.levels.levelIds();
+      } catch (_) {
+        if (mounted) unawaited(_openMap());
+        return;
       }
-    }
-    if (next == null) {
-      _openMap();
-    } else {
-      await openLevel(context, services, next);
+      if (!mounted) return;
+      final progress = services.progress;
+      String? next;
+      for (final id in ids) {
+        if (!progress.progressOf(id).completed &&
+            progress.isUnlocked(id, ids)) {
+          next = id;
+          break;
+        }
+      }
+      unawaited(_openMap());
+      if (next != null) await openLevel(context, services, next);
+    } finally {
+      _playing = false;
     }
   }
 
@@ -182,8 +191,8 @@ class _SkylinePainter extends CustomPainter {
   }
 }
 
-/// Pip with an eye that shuts for [_blinkFor] at the end of every
-/// [_blinkEvery]; repaints only when [eyeOpen] flips.
+/// Pip with an eye that shuts for [_blinkFor] every [_blinkEvery];
+/// repaints only when [eyeOpen] flips.
 class _PipPainter extends CustomPainter {
   _PipPainter(this.eyeOpen) : super(repaint: eyeOpen);
 

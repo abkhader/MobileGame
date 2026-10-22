@@ -9,6 +9,9 @@ import 'story_card_screen.dart';
 /// The chapter number of a level id: "2-05" → 2.
 int? chapterNumberOf(String id) => int.tryParse(id.split('-').first);
 
+/// True while an [openLevel] call is loading, so a double tap is ignored.
+bool _opening = false;
+
 /// The single route into a level. Shows the chapter's intro card first if it
 /// is unseen and the story loaded; the card's done marks it seen and
 /// replaces the card with the level.
@@ -20,6 +23,21 @@ Future<void> openLevel(
   AppServices services,
   String id, {
   bool replace = false,
+}) async {
+  if (_opening) return;
+  _opening = true;
+  try {
+    await _openLevel(context, services, id, replace: replace);
+  } finally {
+    _opening = false;
+  }
+}
+
+Future<void> _openLevel(
+  BuildContext context,
+  AppServices services,
+  String id, {
+  required bool replace,
 }) async {
   final navigator = Navigator.of(context);
   final oldRoute = replace ? ModalRoute.of(context) : null;
@@ -87,14 +105,9 @@ Future<void> showEnding(BuildContext context, AppServices services) async {
   final navigator = Navigator.of(context);
   final ending = (await services.story.load())?.ending;
   if (ending == null || ending.isEmpty || !context.mounted) return;
-  await _showCard(
-    navigator,
-    title: '',
-    lines: ending,
-    litSkyline: true,
-    onDone: () =>
-        unawaited(services.progress.markEndingSeen().catchError((_) {})),
-  );
+  // Seen as soon as it shows, so system Back cannot make it replay or lose it.
+  unawaited(services.progress.markEndingSeen().catchError((_) {}));
+  await _showCard(navigator, title: '', lines: ending, litSkyline: true);
 }
 
 /// Pushes a card that pops itself when done; completes once it is gone.
@@ -103,7 +116,6 @@ Future<void> _showCard(
   required String title,
   required List<String> lines,
   bool litSkyline = false,
-  VoidCallback? onDone,
 }) {
   late final Route<void> cardRoute;
   cardRoute = MaterialPageRoute<void>(
@@ -112,7 +124,6 @@ Future<void> _showCard(
       lines: lines,
       litSkyline: litSkyline,
       onDone: () {
-        onDone?.call();
         if (cardRoute.isCurrent) navigator.pop();
       },
     ),

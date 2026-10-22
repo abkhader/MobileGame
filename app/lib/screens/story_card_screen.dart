@@ -57,7 +57,9 @@ class _StoryCardScreenState extends State<StoryCardScreen> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: CustomPaint(painter: _ScenePainter(widget.litSkyline)),
+              child: RepaintBoundary(
+                child: CustomPaint(painter: _ScenePainter(widget.litSkyline)),
+              ),
             ),
             SafeArea(
               child: Padding(

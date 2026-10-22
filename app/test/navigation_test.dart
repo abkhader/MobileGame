@@ -174,6 +174,18 @@ void main() {
     expect(find.byType(GameScreen), findsNothing);
   });
 
+  testWidgets('Play, win, then Levels lands on the map, not Home', (t) async {
+    final services = await _services(t);
+    await _pumpHome(t, services);
+    await _tapAndPump(t, find.text('Play'));
+    await _settleLoads(t);
+    await _winLevel1(t);
+    expect(find.text('Level complete'), findsOneWidget);
+    await _tapAndPump(t, find.text('Levels'));
+    expect(_map, findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
+  });
+
   testWidgets('Map button opens the map', (t) async {
     final services = await _services(t);
     await _pumpHome(t, services);
@@ -189,6 +201,7 @@ void main() {
     for (var i = 0; i < 10; i++) {
       await t.pump(const Duration(seconds: 1));
     }
+    await t.pump(const Duration(milliseconds: 100));
     expect(find.text('Play'), findsOneWidget);
     expect(find.text('Map'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
