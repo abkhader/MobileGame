@@ -227,7 +227,7 @@ void main() {
       }
     });
     await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
-    await t.tap(find.text('Play'));
+    await t.tap(find.text('Map'));
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
     await _settle(t);

@@ -5,6 +5,8 @@ import 'package:echo_app/audio/audio_service.dart';
 import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
+import 'package:echo_app/screens/city_map_screen.dart';
+import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_app/screens/home_screen.dart';
 import 'package:echo_app/screens/level_complete_screen.dart';
 import 'package:flutter/material.dart';
@@ -56,7 +58,7 @@ Future<void> _tapAndPump(WidgetTester t, Finder f) async {
 }
 
 Future<void> _openMap(WidgetTester t) async {
-  await _tapAndPump(t, find.text('Play'));
+  await _tapAndPump(t, find.text('Map'));
   // Level ids load from the asset bundle, which needs real async.
   await t.runAsync(
     () => Future<void>.delayed(const Duration(milliseconds: 50)),
@@ -116,8 +118,80 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   Future<void> markEndingSeen() => _inner.markEndingSeen();
 }
 
+/// Waits for the real-async asset loads behind a tap, then pumps a few frames.
+/// Never pumpAndSettle: Home's blink repeats forever.
+Future<void> _settleLoads(WidgetTester t) async {
+  await t.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 50)),
+  );
+  await t.pump(_frame);
+  await t.pump(const Duration(milliseconds: 500));
+}
+
+Future<void> _completeFirst(
+  WidgetTester t,
+  AppServices services,
+  int count,
+) async {
+  final ids = await _levelIds(t);
+  for (final id in ids.take(count)) {
+    await t.runAsync(() => services.progress.recordCompletion(id, 3));
+  }
+}
+
+String _openedLevel(WidgetTester t) =>
+    t.widget<GameScreen>(find.byType(GameScreen)).levelId;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('Play on a fresh install opens 1-01', (t) async {
+    final services = await _services(t);
+    await _pumpHome(t, services);
+    await _tapAndPump(t, find.text('Play'));
+    await _settleLoads(t);
+    expect(_openedLevel(t), '1-01');
+  });
+
+  testWidgets('Play continues at the first unsolved level', (t) async {
+    final services = await _services(t);
+    await _completeFirst(t, services, 4);
+    await _pumpHome(t, services);
+    await _tapAndPump(t, find.text('Play'));
+    await _settleLoads(t);
+    expect(_openedLevel(t), '1-05');
+  });
+
+  testWidgets('Play with all levels done opens the map', (t) async {
+    final services = await _services(t);
+    final ids = await _levelIds(t);
+    await _completeFirst(t, services, ids.length);
+    await _pumpHome(t, services);
+    await _tapAndPump(t, find.text('Play'));
+    await _settleLoads(t);
+    expect(find.byType(CityMapScreen), findsOneWidget);
+    expect(find.byType(GameScreen), findsNothing);
+  });
+
+  testWidgets('Map button opens the map', (t) async {
+    final services = await _services(t);
+    await _pumpHome(t, services);
+    await _openMap(t);
+    expect(find.byType(CityMapScreen), findsOneWidget);
+    expect(_map, findsOneWidget);
+  });
+
+  testWidgets('Home blinks forever without hanging the test', (t) async {
+    final services = await _services(t);
+    await _pumpHome(t, services);
+    await _settleLoads(t);
+    for (var i = 0; i < 10; i++) {
+      await t.pump(const Duration(seconds: 1));
+    }
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Map'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+  });
 
   testWidgets('Play shows the map with level 1 open, 2 and 3 locked', (
     t,
