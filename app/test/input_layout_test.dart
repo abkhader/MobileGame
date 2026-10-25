@@ -1,17 +1,10 @@
 import 'package:echo_app/game/board_layout.dart';
-import 'package:echo_app/game/input.dart';
 import 'package:echo_app/game/palette.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_core/echo_core.dart';
 
 void main() {
-  test('swipes map to moves', () {
-    expect(swipeToMove(const Offset(600, 50)), Move.right);
-    expect(swipeToMove(const Offset(-30, -500)), Move.up);
-    expect(swipeToMove(const Offset(0, 900)), Move.down);
-    expect(swipeToMove(const Offset(100, 20)), isNull);
-  });
   test('the largest grid fits a small phone board area', () {
     final l = BoardLayout(canvas: const Size(360, 480), columns: 8, rows: 10);
     expect(l.cellSize, 41);

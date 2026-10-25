@@ -14,10 +14,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/flow_input.dart';
 
 const _frame = Duration(milliseconds: 200);
 const _skipKey = Key('story-skip');
-final _board = find.byKey(const Key('board'));
 final _level1 = find.bySemanticsLabel('Level 1, open');
 final _map = find.text('Lumen City');
 
@@ -142,10 +142,7 @@ void main() {
     await _tapAndSettle(t, _level1);
     await _tapAndSettle(t, find.byKey(_skipKey));
     // Level 1-01 is won by four moves right.
-    for (var i = 0; i < 4; i++) {
-      await t.fling(_board, const Offset(300, 0), 1000);
-      await t.pump(_frame);
-    }
+    await holdKey(t, LogicalKeyboardKey.arrowRight, const Duration(seconds: 1));
     await t.pump(const Duration(milliseconds: 500));
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('Level complete'), findsOneWidget);

@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/flow_input.dart';
 
 /// Serves invalid JSON for every asset.
 class _BrokenBundle extends CachingAssetBundle {
@@ -23,7 +24,6 @@ class _BrokenBundle extends CachingAssetBundle {
 }
 
 const _frame = Duration(milliseconds: 200);
-final _board = find.byKey(const Key('board'));
 
 // A fresh bundle per test: rootBundle caches each load's future in the
 // fake-async zone of the test that first made it, so later tests hang on it.
@@ -64,13 +64,15 @@ bool _enabled(WidgetTester t, String label) => t
     )
     .enabled;
 
-Future<void> _flingRight(WidgetTester t) =>
-    t.fling(_board, const Offset(300, 0), 1000);
+Future<void> _stepRight(WidgetTester t) =>
+    tapKey(t, LogicalKeyboardKey.arrowRight);
+
+bool _waitButtonFound() => find.bySemanticsLabel('Wait').evaluate().isNotEmpty;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('HUD starts at run 1 with undo and rewind disabled', (t) async {
+  testWidgets('HUD starts at run 1 with New echo disabled', (t) async {
     await _pumpGame(t, '1-03');
     expect(find.text('Echo'), findsOneWidget);
     expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
@@ -81,37 +83,33 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(_enabled(t, 'Undo'), isFalse);
-    expect(_enabled(t, 'Rewind · 1 left'), isFalse);
+    expect(find.text('Undo'), findsNothing);
+    expect(_waitButtonFound(), isTrue);
+    expect(_enabled(t, 'New echo · 1 left'), isFalse);
     expect(_enabled(t, 'Restart'), isTrue);
     expect(_enabled(t, 'Hint'), isTrue);
   });
 
-  testWidgets('a swipe moves and enables undo and rewind', (t) async {
+  testWidgets('a key tap moves once and enables New echo', (t) async {
     await _pumpGame(t, '1-03');
-    await _flingRight(t);
-    await t.pump(_frame);
+    await _stepRight(t);
     expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
     expect(find.text('Moves 1'), findsNothing);
-    expect(_enabled(t, 'Undo'), isTrue);
-    expect(_enabled(t, 'Rewind · 1 left'), isTrue);
+    expect(_enabled(t, 'New echo · 1 left'), isTrue);
   });
 
-  testWidgets('three fast swipes all register', (t) async {
+  testWidgets('three quick key taps all register', (t) async {
     await _pumpGame(t, '1-03');
-    await _flingRight(t);
-    await _flingRight(t);
-    await _flingRight(t);
-    await t.pump(_frame);
-    await t.pump(_frame);
+    await _stepRight(t);
+    await _stepRight(t);
+    await _stepRight(t);
     expect(find.bySemanticsLabel('Battery, 22 moves left'), findsOneWidget);
   });
 
-  testWidgets('Rewind starts the next run', (t) async {
+  testWidgets('New echo starts the next run', (t) async {
     await _pumpGame(t, '1-03');
-    await _flingRight(t);
-    await t.pump(_frame);
-    await t.tap(find.text('Rewind · 1 left'));
+    await _stepRight(t);
+    await t.tap(find.text('New echo · 1 left'));
     await t.pump(_frame);
     expect(find.bySemanticsLabel('Run 2 of 2'), findsOneWidget);
     expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
@@ -119,8 +117,7 @@ void main() {
 
   testWidgets('running out of runs shows the lose overlay', (t) async {
     await _pumpGame(t, '1-01');
-    await t.tap(_board);
-    await t.pump(_frame);
+    await tapKey(t, LogicalKeyboardKey.space);
     expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
     await t.tap(find.text('Give up'));
     await t.pump(_frame);
@@ -133,8 +130,7 @@ void main() {
 
   testWidgets('Hint is disabled once the level is lost', (t) async {
     await _pumpGame(t, '1-01');
-    await t.tap(_board);
-    await t.pump(_frame);
+    await tapKey(t, LogicalKeyboardKey.space);
     await t.tap(find.text('Give up'));
     await t.pump(_frame);
     expect(find.text('Out of runs'), findsOneWidget);
@@ -193,10 +189,13 @@ void main() {
   testWidgets('winning calls onWon once after a short delay', (t) async {
     final won = <GameController>[];
     await _pumpGame(t, '1-01', onWon: won.add);
-    for (var i = 0; i < 4; i++) {
-      await _flingRight(t);
-      await t.pump(_frame);
+    for (var i = 0; i < 3; i++) {
+      await _stepRight(t);
     }
+    // The winning step: one beat, then less than the win delay.
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await t.pump(_frame);
     expect(won, isEmpty);
     await t.pump(const Duration(milliseconds: 500));
     expect(won, hasLength(1));
@@ -208,8 +207,7 @@ void main() {
   testWidgets('winning while the menu is open closes it', (t) async {
     await _pumpGame(t, '1-01');
     for (var i = 0; i < 3; i++) {
-      await _flingRight(t);
-      await t.pump(_frame);
+      await _stepRight(t);
     }
     await t.tap(find.byTooltip('More'));
     await t.pump(_frame);

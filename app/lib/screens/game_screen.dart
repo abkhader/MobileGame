@@ -3,14 +3,19 @@ import 'dart:async';
 import 'package:echo_core/echo_core.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../app_services.dart';
 import '../art/pip.dart';
 import '../audio/game_sounds.dart';
 import '../game/battery_bar.dart';
 import '../game/echo_board.dart';
+import '../game/floating_joystick.dart';
+import '../game/flow_controller.dart';
+import '../game/flow_keys.dart';
+import '../game/game_clock.dart';
 import '../game/game_controller.dart';
-import '../game/input.dart';
+import '../game/hold_button.dart';
 import '../game/palette.dart' as palette;
 import '../hints/hint_service.dart';
 import 'level_complete_screen.dart';
@@ -32,10 +37,14 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _winDelay = Duration(milliseconds: 400);
 
   GameController? _controller;
+  FlowController? _flow;
+  late final Ticker _ticker = createTicker(_onTick);
+  Duration _lastTick = Duration.zero;
   GameState? _lastState;
   EchoBoard? _board;
   bool _failed = false;
@@ -50,9 +59,13 @@ class _GameScreenState extends State<GameScreen> {
   @visibleForTesting
   GameController? get controllerForTesting => _controller;
 
+  @visibleForTesting
+  FlowController? get flowForTesting => _flow;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Retry music here: a browser may have blocked the earlier autoplay.
     if (widget.services.progress.musicOn) {
       unawaited(widget.services.audio.startMusic().catchError((_) {}));
@@ -68,6 +81,10 @@ class _GameScreenState extends State<GameScreen> {
       _lastState = controller.state;
       setState(() {
         _controller = controller;
+        _flow = FlowController(
+          game: controller,
+          speed: () => widget.services.progress.moveSpeed,
+        );
         _board = EchoBoard(controller);
       });
     } catch (_) {
@@ -96,6 +113,57 @@ class _GameScreenState extends State<GameScreen> {
     _syncHint();
     setState(() {});
   }
+
+  // Drives the flow clock. Runs only while the clock runs, so a frozen game
+  // forces no frames. Task 4 may move this into the board's update(dt).
+  void _syncTicker() {
+    final running = _flow?.clock.running ?? false;
+    if (running && !_ticker.isActive) {
+      _lastTick = Duration.zero;
+      _ticker.start();
+    } else if (!running && _ticker.isActive) {
+      _ticker.stop();
+    }
+  }
+
+  void _onTick(Duration elapsed) {
+    final dt = elapsed - _lastTick;
+    _lastTick = elapsed;
+    _flow?.advance(dt.inMicroseconds / Duration.microsecondsPerSecond);
+    _syncTicker();
+  }
+
+  void _press(IntentKind kind, [Move? dir]) {
+    _flow?.press(kind, dir);
+    _syncTicker();
+  }
+
+  void _release(IntentKind kind) {
+    _flow?.release(kind);
+    _syncTicker();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive ||
+          AppLifecycleState.hidden ||
+          AppLifecycleState.paused:
+        _flow
+          ?..clock.stop()
+          ..releaseAll();
+        _syncTicker();
+      case AppLifecycleState.resumed || AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  void _newEcho() {
+    final c = _controller;
+    if (c != null && c.canEndRun) c.endRun();
+  }
+
+  void _restart() => _controller?.restart();
 
   static const _rewindTipsMax = 2;
   static const _rewindTip =
@@ -220,6 +288,9 @@ class _GameScreenState extends State<GameScreen> {
   void dispose() {
     _winTimer?.cancel();
     _tipTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker.dispose();
+    _flow?.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -256,6 +327,25 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildGame(BuildContext context, GameController c) {
+    return Focus(
+      autofocus: true,
+      // Keys only: a semantics node here would merge the HUD labels.
+      includeSemantics: false,
+      onKeyEvent: (_, e) {
+        final result = flowKeyHandler(
+          e,
+          _flow!,
+          onNewEcho: _newEcho,
+          onRestart: _restart,
+        );
+        _syncTicker();
+        return result;
+      },
+      child: _buildColumn(context, c),
+    );
+  }
+
+  Widget _buildColumn(BuildContext context, GameController c) {
     final state = c.state;
     final tip = c.level.tip;
     final textTheme = Theme.of(context).textTheme;
@@ -293,15 +383,12 @@ class _GameScreenState extends State<GameScreen> {
           child: Stack(
             children: [
               Positioned.fill(
-                child: GestureDetector(
+                child: _BoardInput(
                   key: const Key('board'),
-                  behavior: HitTestBehavior.opaque,
-                  onPanEnd: (details) {
-                    final move = swipeToMove(details.velocity.pixelsPerSecond);
-                    if (move != null) c.move(move);
-                  },
-                  onTap: () => c.move(Move.wait),
-                  child: GameWidget(game: _board!),
+                  flow: _flow!,
+                  onChanged: _syncTicker,
+                  // The screen's Focus takes the keys; Flame would eat them.
+                  child: GameWidget(game: _board!, autofocus: false),
                 ),
               ),
               if (_tipShown)
@@ -343,9 +430,10 @@ class _GameScreenState extends State<GameScreen> {
           padding: const EdgeInsets.all(8),
           child: Row(
             children: [
-              _button(Icons.undo, 'Undo', c.canUndo ? c.undo : null),
-              _rewindButton(c),
-              _button(Icons.replay, 'Restart', c.restart),
+              _holdButton(Icons.history, 'Rewind time', IntentKind.rewind),
+              _holdButton(Icons.hourglass_bottom, 'Wait', IntentKind.wait),
+              _newEchoButton(c),
+              _button(Icons.replay, 'Restart', _restart),
               _button(
                 Icons.lightbulb_outline,
                 'Hint',
@@ -358,20 +446,33 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  /// Rewind while runs remain; on the last run the same action gives up.
-  Widget _rewindButton(GameController c) {
+  Widget _holdButton(IconData icon, String label, IntentKind kind) => SizedBox(
+    width: 52,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: HoldButton(
+        icon: icon,
+        label: label,
+        onStart: () => _press(kind),
+        onEnd: () => _release(kind),
+      ),
+    ),
+  );
+
+  /// A new echo while runs remain; on the last run the same action gives up.
+  Widget _newEchoButton(GameController c) {
     final left = c.level.runLimit - c.state.runIndex - 1;
     final enabled = c.canEndRun;
-    // Level 1-03 teaches rewinding: nudge the button until it has been used.
+    // Level 1-03 teaches echoes: nudge the button until it has been used.
     final nudge =
         c.level.id == '1-03' &&
         !MediaQuery.disableAnimationsOf(context) &&
         !_rewound &&
         widget.services.progress.rewindTipsShown == 0;
     return _button(
-      left > 0 ? Icons.fast_rewind : Icons.flag,
-      left > 0 ? 'Rewind · $left left' : 'Give up',
-      enabled ? c.endRun : null,
+      left > 0 ? Icons.people_alt_outlined : Icons.flag,
+      left > 0 ? 'New echo · $left left' : 'Give up',
+      enabled ? _newEcho : null,
       pulse: nudge,
     );
   }
@@ -396,7 +497,7 @@ class _GameScreenState extends State<GameScreen> {
         child: pulse
             ? RepaintBoundary(
                 child: _Pulse(
-                  key: const Key('rewind-pulse'),
+                  key: const Key('new-echo-pulse'),
                   active: onPressed != null,
                   child: button,
                 ),
@@ -405,6 +506,30 @@ class _GameScreenState extends State<GameScreen> {
       ),
     );
   }
+}
+
+/// The board's input layer: the floating joystick over the Flame board.
+class _BoardInput extends StatelessWidget {
+  const _BoardInput({
+    required this.flow,
+    required this.onChanged,
+    required this.child,
+    super.key,
+  });
+
+  final FlowController flow;
+  final VoidCallback onChanged;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    // Runs after the joystick's own handlers: wake the ticker if needed.
+    onPointerDown: (_) => onChanged(),
+    onPointerMove: (_) => onChanged(),
+    onPointerUp: (_) => onChanged(),
+    onPointerCancel: (_) => onChanged(),
+    child: FloatingJoystick(flow: flow, child: child),
+  );
 }
 
 class _TipBanner extends StatelessWidget {

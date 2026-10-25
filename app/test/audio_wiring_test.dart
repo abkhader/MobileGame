@@ -12,11 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/flow_input.dart';
 import 'support/story_flags.dart';
 import 'support/fake_audio_service.dart';
 
 const _frame = Duration(milliseconds: 200);
-final _board = find.byKey(const Key('board'));
 
 Future<AppServices> _services(
   WidgetTester t,
@@ -44,18 +44,17 @@ Future<void> _pumpGame(WidgetTester t, AppServices s) async {
   await t.pump(_frame);
 }
 
-Future<void> _swipe(WidgetTester t) async {
-  await t.fling(_board, const Offset(300, 0), 1000);
-  await t.pump(_frame);
+Future<void> _step(WidgetTester t) async {
+  await tapKey(t, LogicalKeyboardKey.arrowRight);
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('a swipe on 1-01 plays move', (t) async {
+  testWidgets('a step on 1-01 plays move', (t) async {
     final audio = FakeAudioService();
     await _pumpGame(t, await _services(t, audio));
-    await _swipe(t);
+    await _step(t);
     expect(audio.played, [Sfx.move]);
   });
 
@@ -63,14 +62,14 @@ void main() {
     final audio = FakeAudioService();
     await _pumpGame(t, await _services(t, audio));
     for (var i = 0; i < 4; i++) {
-      await _swipe(t);
+      await _step(t);
     }
     expect(audio.played.last, Sfx.win);
     expect(audio.played, contains(Sfx.win));
     await t.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('with sfxOn false a swipe plays nothing', (t) async {
+  testWidgets('with sfxOn false a step plays nothing', (t) async {
     final audio = FakeAudioService();
     await _pumpGame(
       t,
@@ -80,7 +79,7 @@ void main() {
         prefs: {ProgressRepository.storageKey: '{"sfxOn":false}'},
       ),
     );
-    await _swipe(t);
+    await _step(t);
     expect(audio.played, isEmpty);
   });
 
@@ -134,7 +133,7 @@ void main() {
     await t.pump(_frame);
     await t.pump(_frame);
     for (var i = 0; i < 4; i++) {
-      await _swipe(t);
+      await _step(t);
     }
     expect(audio.played, isEmpty);
     await t.pump(const Duration(seconds: 1));
@@ -164,7 +163,7 @@ void main() {
   ) async {
     final audio = FakeAudioService(throws: true);
     await _pumpGame(t, await _services(t, audio));
-    await _swipe(t);
+    await _step(t);
     expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
     expect(t.takeException(), isNull);
   });

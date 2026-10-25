@@ -41,14 +41,18 @@ void main() {
     }
     await tester.pump(const Duration(milliseconds: 500));
 
-    for (var i = 0; i < 4; i++) {
-      await tester.fling(
-        find.byKey(const Key('board')),
-        const Offset(200, 0),
-        1000,
-      );
-      await tester.pump(const Duration(milliseconds: 300));
+    // Hold the joystick right in the lower board area: 1-01 is four steps
+    // right. A touch device is the real target, so drag rather than keys.
+    final board = tester.getRect(find.byKey(const Key('board')));
+    final thumb = await tester.startGesture(
+      Offset(board.center.dx, board.top + board.height * 0.8),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await thumb.moveBy(const Offset(60, 0));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
     }
+    await thumb.up();
 
     for (var i = 0; i < 50; i++) {
       if (find.text('Level complete').evaluate().isNotEmpty) break;

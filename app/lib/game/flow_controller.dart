@@ -31,7 +31,50 @@ class FlowController extends ChangeNotifier {
 
   bool get frozen => !clock.running;
 
+  final List<(IntentKind, Move?)> _held = [];
+
+  /// Held inputs, oldest first. The last one drives the clock.
+  List<(IntentKind, Move?)> get held => List.unmodifiable(_held);
+
+  /// Low level: sets the clock's intent directly. Inputs use [press] and
+  /// [release] so two thumbs (or keys) arbitrate.
   void setIntent(IntentKind kind, [Move? dir]) => clock.setIntent(kind, dir);
+
+  /// An input of [kind] went down (or a held move changed direction). The
+  /// latest press wins.
+  void press(IntentKind kind, [Move? dir]) {
+    if (kind == IntentKind.none) return;
+    final before = _top;
+    _held
+      ..removeWhere((e) => e.$1 == kind)
+      ..add((kind, kind == IntentKind.move ? dir : null));
+    if (_top != before) _applyTop();
+  }
+
+  /// The input of [kind] was let go: the previous held input, if any, takes
+  /// over again.
+  void release(IntentKind kind) {
+    final before = _top;
+    _held.removeWhere((e) => e.$1 == kind);
+    if (_top != before) _applyTop();
+  }
+
+  /// Forgets every held input, e.g. when the app goes to the background.
+  void releaseAll() {
+    _held.clear();
+    clock.setIntent(IntentKind.none);
+  }
+
+  (IntentKind, Move?)? get _top => _held.isEmpty ? null : _held.last;
+
+  void _applyTop() {
+    final top = _top;
+    if (top == null) {
+      clock.setIntent(IntentKind.none);
+    } else {
+      clock.setIntent(top.$1, top.$2);
+    }
+  }
 
   void advance(double dt) => clock.advance(dt);
 

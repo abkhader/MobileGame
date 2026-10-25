@@ -17,10 +17,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/flow_input.dart';
 import 'support/story_flags.dart';
 
 const _frame = Duration(milliseconds: 200);
-final _board = find.byKey(const Key('board'));
 final _level1 = find.bySemanticsLabel('Level 1, open');
 final _locked = find.bySemanticsLabel(RegExp(r'^Level \d+, locked$'));
 final _map = find.text('Lumen City');
@@ -69,10 +69,8 @@ Future<void> _openMap(WidgetTester t) async {
 }
 
 Future<void> _winLevel1(WidgetTester t) async {
-  for (var i = 0; i < 4; i++) {
-    await t.fling(_board, const Offset(300, 0), 1000);
-    await t.pump(_frame);
-  }
+  // Four beats of holding right.
+  await holdKey(t, LogicalKeyboardKey.arrowRight, const Duration(seconds: 1));
   await t.pump(const Duration(milliseconds: 500));
   await t.pump(const Duration(milliseconds: 500));
 }
@@ -332,10 +330,10 @@ void main() {
     await _pumpHome(t, services);
     await _openMap(t);
     await _tapAndPump(t, _level1);
-    for (var i = 0; i < 4; i++) {
-      await t.fling(_board, const Offset(300, 0), 1000);
-      await t.pump(const Duration(milliseconds: 50));
-    }
+    // Beats at 0, 250, 450 and 650 ms: the win lands at 650 ms.
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await pumpFrames(t, const Duration(milliseconds: 700));
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     // Open the menu before the 400 ms win delay fires.
     await t.tap(find.byIcon(Icons.more_vert));
     await t.pump(_frame);

@@ -17,11 +17,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/flow_input.dart';
 import 'support/story_flags.dart';
 
 const _frame = Duration(milliseconds: 200);
 const _noAd = 'No ad available right now, try again later.';
-final _board = find.byKey(const Key('board'));
 
 /// Records the arguments it is asked about and always says yes.
 class _AlwaysPolicy extends AdPolicy {
@@ -140,10 +140,8 @@ void main() {
   ) async {
     final ads = FakeAdService();
     await _pumpGame(t, await _services(t, ads), '1-01');
-    for (var i = 0; i < 4; i++) {
-      await t.fling(_board, const Offset(300, 0), 1000);
-      await t.pump(_frame);
-    }
+    // Level 1-01 is won by holding right for four beats.
+    await holdKey(t, LogicalKeyboardKey.arrowRight, const Duration(seconds: 1));
     await t.pump(const Duration(milliseconds: 500));
     await t.pump(const Duration(milliseconds: 500));
     expect(find.text('Level complete'), findsOneWidget);
@@ -185,9 +183,8 @@ void main() {
     await t.tap(find.text('Hint'));
     await t.pump(_frame);
     expect(_echoBoard(t).hintPath, HintService.pathFor(level, 0));
-    await t.fling(_board, const Offset(300, 0), 1000);
-    await t.pump(_frame);
-    await t.tap(find.text('Rewind · 1 left'));
+    await tapKey(t, LogicalKeyboardKey.arrowRight);
+    await t.tap(find.text('New echo · 1 left'));
     await t.pump(_frame);
     expect(find.bySemanticsLabel('Run 2 of 2'), findsOneWidget);
     expect(_echoBoard(t).hintPath, HintService.pathFor(level, 1));
@@ -203,9 +200,8 @@ void main() {
     await t.tap(find.text('Hint'));
     await t.pump(_frame);
     expect(find.text(note), findsNothing);
-    await t.tap(_board);
-    await t.pump(_frame);
-    await t.tap(find.text('Rewind · 1 left'));
+    await tapKey(t, LogicalKeyboardKey.space);
+    await t.tap(find.text('New echo · 1 left'));
     await t.pump(_frame);
     expect(find.text(note), findsOneWidget);
     await t.tap(find.text('Restart'));
