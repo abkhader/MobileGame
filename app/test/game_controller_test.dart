@@ -110,4 +110,15 @@ void main() {
     c.endRun();
     expect(n, 4);
   });
+
+  test('isBlocked: wall, door and wait', () {
+    final c = GameController(_level(['#S.E', 'a.A.']));
+    expect(c.isBlocked(Move.left), isTrue);
+    expect(c.isBlocked(Move.right), isFalse);
+    expect(c.isBlocked(Move.wait), isFalse);
+    expect(c.isBlocked(Move.up), isTrue);
+    expect(c.isBlocked(Move.down), isFalse);
+    c.move(Move.right);
+    expect(c.isBlocked(Move.down), isTrue, reason: 'closed door');
+  });
 }
