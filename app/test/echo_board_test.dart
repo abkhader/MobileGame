@@ -15,16 +15,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/fake_ad_service.dart';
 import 'support/flow_input.dart';
 
+/// Serves the real assets, except level 1-01 becomes a two-move corridor.
+class _ShortLevelBundle extends PlatformAssetBundle {
+  @override
+  Future<String> loadString(String key, {bool cache = true}) async {
+    if (key == 'assets/levels/1-01.json') {
+      return '{"id": "1-01", "name": "Short", "runLimit": 1, '
+          '"grid": ["#####", "#S.E#", "#####"], "bestScore": 2}';
+    }
+    return super.loadString(key, cache: cache);
+  }
+}
+
 Future<void> _pumpGame(
   WidgetTester t,
   String levelId, {
+  AssetBundle? bundle,
   bool reduceMotion = false,
   void Function(GameController c)? onWon,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final progress = (await t.runAsync(ProgressRepository.open))!;
   final services = AppServices(
-    levels: LevelRepository(PlatformAssetBundle()),
+    levels: LevelRepository(bundle ?? PlatformAssetBundle()),
     progress: progress,
     ads: FakeAdService(),
     audio: const SilentAudioService(),
@@ -232,5 +245,65 @@ void main() {
     await t.sendKeyUpEvent(LogicalKeyboardKey.keyZ);
     await _settleFully(t);
     expect(board.doorOpenForTesting(door), 0);
+  });
+
+  testWidgets('restart after two moves snaps doors and resets Pip', (t) async {
+    await _pumpGame(t, '1-03');
+    const door = Position(4, 1);
+    final board = _board(t);
+    final start = board.pipTileForTesting;
+    await tapKey(t, LogicalKeyboardKey.arrowRight); // onto the plate
+    await tapKey(t, LogicalKeyboardKey.space); // stay: the door stays open
+    await _settleFully(t);
+    expect(_game(t).state.tick, 2);
+    expect(board.doorOpenForTesting(door), 1);
+    await t.tap(find.text('Restart'));
+    await t.pump(Duration.zero);
+    expect(_game(t).lastEvent, GameEvent.restarted);
+    expect(board.doorOpenForTesting(door), 0);
+    expect(board.pipTileForTesting, start);
+    await _settleFully(t);
+  });
+
+  testWidgets('restart mid-glide on the second move drops Pip\'s pose', (
+    t,
+  ) async {
+    await _pumpGame(t, '1-03');
+    final board = _board(t);
+    await tapKey(t, LogicalKeyboardKey.arrowUp); // a push: one beat
+    await _settleFully(t);
+    await _pressAndRun(
+      t,
+      LogicalKeyboardKey.arrowRight,
+      const Duration(milliseconds: 100),
+    );
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    expect(_game(t).state.tick, 2);
+    expect(board.pipLeanForTesting, greaterThan(0));
+    await t.tap(find.text('Restart'));
+    expect(board.pipLeanForTesting, 0);
+    expect(board.pipStretchForTesting, 0);
+    await _settleFully(t);
+  });
+
+  testWidgets('restart after a two-move win stops the flash', (t) async {
+    final won = <GameController>[];
+    await _pumpGame(t, '1-01', bundle: _ShortLevelBundle(), onWon: won.add);
+    final board = _board(t);
+    final start = board.pipTileForTesting;
+    await tapKey(t, LogicalKeyboardKey.arrowRight);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await t.pump(Duration.zero);
+    expect(_game(t).lastEvent, GameEvent.won);
+    expect(_game(t).state.tick, 2);
+    expect(board.winFlashActiveForTesting, isTrue);
+    await t.tap(find.text('Restart'));
+    await t.pump(Duration.zero);
+    expect(board.winFlashActiveForTesting, isFalse);
+    expect(board.pipTileForTesting, start);
+    await _settleFully(t);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(won, isEmpty);
   });
 }

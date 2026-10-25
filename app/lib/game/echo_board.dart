@@ -129,6 +129,12 @@ class EchoBoard extends FlameGame {
   @visibleForTesting
   bool get winFlashActiveForTesting => _fx.winFlash.active;
 
+  @visibleForTesting
+  double get pipLeanForTesting => _pip.lean;
+
+  @visibleForTesting
+  double get pipStretchForTesting => _pip.stretch;
+
   @override
   void onMount() {
     super.onMount();
@@ -176,11 +182,7 @@ class EchoBoard extends FlameGame {
     final count = state.ghostPositions.length;
     final runChanged =
         state.runIndex != _run || count != _fx.ghostTrails.length;
-    // Rewind steps are the only other event-less change; anything else
-    // event-less is a restart.
-    final rewindStep =
-        event == GameEvent.none && from != null && from.tick == state.tick + 1;
-    final reset = runChanged || (event == GameEvent.none && !rewindStep);
+    final reset = runChanged || event == GameEvent.restarted;
 
     for (final entry in _fx.doors.entries) {
       entry.value.target = state.openDoors.contains(entry.key);

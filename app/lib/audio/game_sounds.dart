@@ -18,6 +18,7 @@ List<Sfx> soundsFor(GameState before, GameState after, GameEvent event) {
     case GameEvent.won:
       return [Sfx.move, Sfx.win];
     case GameEvent.none:
+    case GameEvent.restarted:
       return [];
   }
 }

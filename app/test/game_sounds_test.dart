@@ -68,4 +68,8 @@ void main() {
   test('none plays nothing', () {
     expect(soundsFor(start, start, GameEvent.none), isEmpty);
   });
+
+  test('restarted plays nothing', () {
+    expect(soundsFor(start, start, GameEvent.restarted), isEmpty);
+  });
 }

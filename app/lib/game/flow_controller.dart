@@ -135,6 +135,9 @@ class FlowController extends ChangeNotifier {
       case GameEvent.runEnded || GameEvent.won || GameEvent.lost:
         clock.stop();
         _from = game.previous;
+      case GameEvent.restarted:
+        // Nothing to glide from: the level starts over.
+        _from = null;
       case GameEvent.none || GameEvent.moved:
         break;
     }

@@ -1,7 +1,9 @@
 import 'package:echo_core/echo_core.dart';
 import 'package:flutter/foundation.dart';
 
-enum GameEvent { none, moved, runEnded, won, lost }
+/// What the last change was. [restarted] marks a level restart, so listeners
+/// never have to infer it.
+enum GameEvent { none, moved, runEnded, won, lost, restarted }
 
 /// Wraps the engine [Rules] for the UI, with a per-run undo stack.
 class GameController extends ChangeNotifier {
@@ -82,7 +84,7 @@ class GameController extends ChangeNotifier {
     _state = GameState.initial(level);
     _undoStack.clear();
     _previous = null;
-    _lastEvent = GameEvent.none;
+    _lastEvent = GameEvent.restarted;
     notifyListeners();
   }
 }

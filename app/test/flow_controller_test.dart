@@ -206,4 +206,17 @@ void main() {
     expect(f.frozen, isTrue);
     expect(f.from, same(before));
   });
+
+  test('restart clears from', () {
+    final game = GameController(_level(['S...E']));
+    final f = _flow(game);
+    for (var i = 0; i < 2; i++) {
+      f.setIntent(IntentKind.move, Move.right);
+      f.setIntent(IntentKind.none);
+      f.advance(0.2);
+    }
+    expect(f.from, isNotNull);
+    game.restart();
+    expect(f.from, isNull);
+  });
 }

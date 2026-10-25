@@ -90,7 +90,7 @@ void main() {
     expect(n, 3);
     expect(c.state.player, GameState.initial(level).player);
     expect(c.state.tick, 0);
-    expect(c.lastEvent, GameEvent.none);
+    expect(c.lastEvent, GameEvent.restarted);
     expect(c.previous, isNull);
     expect(c.canUndo, isFalse);
   });
