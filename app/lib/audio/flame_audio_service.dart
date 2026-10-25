@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flame_audio/flame_audio.dart';
 
 import 'audio_service.dart';
@@ -97,6 +99,9 @@ class FlameAudioService implements AudioService {
   @override
   Future<void> setFrozen(bool frozen) async {
     _frozen = frozen;
+    // Called when a level opens: warm the sounds so a rewind press never
+    // waits for a load inside the browser's gesture window.
+    unawaited(_ensureLoaded().catchError((_) {}));
     try {
       if (_bgmInitialized) {
         await FlameAudio.bgm.audioPlayer.setVolume(_targetVolume);

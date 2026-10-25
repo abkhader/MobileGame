@@ -189,7 +189,14 @@ void main() {
         Move.right,
       ].firstWhere((m) => c.isBlocked(m) as bool);
       await tapKey(t, _keyFor(blocked));
-      expect(audio.played, contains(Sfx.bump));
+      expect(audio.played, [Sfx.bump]);
+    });
+
+    testWidgets('a normal step plays move and no bump', (t) async {
+      final audio = FakeAudioService();
+      await _pumpGame(t, await _services(t, audio));
+      await tapKey(t, LogicalKeyboardKey.arrowRight);
+      expect(audio.played, [Sfx.move]);
     });
   });
 

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' show Picture, PictureRecorder, PointMode;
 
 import 'package:echo_core/echo_core.dart';
 import 'package:flame/game.dart';
@@ -49,6 +51,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _hintUnlocked = false;
   bool _adBusy = false;
   bool _rewound = false;
+  bool _pushed = false;
   bool _tipShown = false;
   bool _tipVisible = false;
   Timer? _tipTimer;
@@ -182,7 +185,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final before = _lastState!;
     _lastState = c.state;
     final services = widget.services;
-    final sounds = soundsFor(before, c.state, c.lastEvent);
+    // A push plays only the push sound: the bump fired before this step.
+    final pushed = _pushed;
+    _pushed = false;
+    final sounds = [
+      for (final sfx in soundsFor(before, c.state, c.lastEvent))
+        if (!(pushed && sfx == Sfx.move)) sfx,
+    ];
     if (services.progress.vibration) {
       if (c.lastEvent == GameEvent.won) {
         Haptics.play(HapticKind.heavy);
@@ -198,6 +207,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   /// A push: a soft tick and a light buzz.
   void _onBump() {
+    _pushed = true;
     final services = widget.services;
     if (services.progress.vibration) Haptics.play(HapticKind.light);
     if (services.progress.sfxOn) {
@@ -610,32 +620,73 @@ class _RewindShimmerState extends State<_RewindShimmer>
     super.dispose();
   }
 
+  // The scanlines never repaint; only the thin band layer does.
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: Size.infinite, painter: _ShimmerPainter(_controller));
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      RepaintBoundary(
+        child: CustomPaint(size: Size.infinite, painter: _ScanlinePainter()),
+      ),
+      RepaintBoundary(
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _BandPainter(_controller),
+        ),
+      ),
+    ],
+  );
 }
 
-class _ShimmerPainter extends CustomPainter {
-  _ShimmerPainter(this.progress) : super(repaint: progress);
-
-  final Animation<double> progress;
-
+/// Records the scanlines once per size and replays the picture.
+class _ScanlinePainter extends CustomPainter {
   static final _line = Paint()
     ..color = const Color(0x1A9FC4FF)
     ..strokeWidth = 1;
+
+  Size? _size;
+  Picture? _picture;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (_size != size) {
+      _picture?.dispose();
+      final recorder = PictureRecorder();
+      final c = Canvas(recorder);
+      final lines = Float32List(((size.height / 4).ceil()) * 4);
+      var i = 0;
+      for (var y = 0.0; y < size.height; y += 4) {
+        lines[i++] = 0;
+        lines[i++] = y;
+        lines[i++] = size.width;
+        lines[i++] = y;
+      }
+      c.drawRawPoints(PointMode.lines, lines, _line);
+      _picture = recorder.endRecording();
+      _size = size;
+    }
+    canvas.drawPicture(_picture!);
+  }
+
+  @override
+  bool shouldRepaint(_ScanlinePainter old) => false;
+}
+
+class _BandPainter extends CustomPainter {
+  _BandPainter(this.progress) : super(repaint: progress);
+
+  final Animation<double> progress;
+
   static final _band = Paint()..color = const Color(0x1F9FC4FF);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (var y = 0.0; y < size.height; y += 4) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), _line);
-    }
     final bandY = size.height * progress.value;
     canvas.drawRect(Rect.fromLTWH(0, bandY - 24, size.width, 48), _band);
   }
 
   @override
-  bool shouldRepaint(_ShimmerPainter old) => old.progress != progress;
+  bool shouldRepaint(_BandPainter old) => old.progress != progress;
 }
 
 /// The board's input layer: the floating joystick over the Flame board.
