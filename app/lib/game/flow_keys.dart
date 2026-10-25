@@ -28,21 +28,29 @@ KeyEventResult flowKeyHandler(
   required VoidCallback onRestart,
 }) {
   final key = e.logicalKey;
+  final keyboard = HardwareKeyboard.instance;
+  // Leave shortcuts such as Ctrl/Cmd+R (reload) to the browser.
+  if (e is! KeyUpEvent &&
+      (keyboard.isControlPressed ||
+          keyboard.isMetaPressed ||
+          keyboard.isAltPressed)) {
+    return KeyEventResult.ignored;
+  }
   final down = e is KeyDownEvent;
   final up = e is KeyUpEvent;
   final move = _moves[key];
   if (move != null) {
-    if (down) flow.press(IntentKind.move, move);
+    if (down) flow.press(IntentKind.move, move, InputSource.keys);
     if (up) {
       // Another direction key still down takes over.
-      final still = HardwareKeyboard.instance.logicalKeysPressed
+      final still = keyboard.logicalKeysPressed
           .map((k) => _moves[k])
           .whereType<Move>()
           .lastOrNull;
       if (still != null) {
-        flow.press(IntentKind.move, still);
+        flow.press(IntentKind.move, still, InputSource.keys);
       } else {
-        flow.release(IntentKind.move);
+        flow.release(IntentKind.move, InputSource.keys);
       }
     }
     return KeyEventResult.handled;
@@ -53,8 +61,8 @@ KeyEventResult flowKeyHandler(
       ? IntentKind.rewind
       : null;
   if (kind != null) {
-    if (down) flow.press(kind);
-    if (up) flow.release(kind);
+    if (down) flow.press(kind, null, InputSource.keys);
+    if (up) flow.release(kind, InputSource.keys);
     return KeyEventResult.handled;
   }
   if (key == LogicalKeyboardKey.keyE || key == LogicalKeyboardKey.keyR) {

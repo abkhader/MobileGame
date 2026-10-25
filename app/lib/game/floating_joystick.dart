@@ -1,4 +1,5 @@
 import 'package:echo_core/echo_core.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'flow_controller.dart';
@@ -40,6 +41,10 @@ class _FloatingJoystickState extends State<FloatingJoystick> {
 
   void _down(PointerDownEvent e) {
     if (_pointer != null) return;
+    // Mouse: only the primary button drives Pip.
+    if (e.kind == PointerDeviceKind.mouse && e.buttons != kPrimaryButton) {
+      return;
+    }
     final height = context.size?.height ?? 0;
     if (e.localPosition.dy < height * FloatingJoystick.topShare) return;
     setState(() {
@@ -56,9 +61,9 @@ class _FloatingJoystickState extends State<FloatingJoystick> {
     if (dir != _dir) {
       _dir = dir;
       if (dir == null) {
-        widget.flow.release(IntentKind.move);
+        widget.flow.release(IntentKind.move, InputSource.joystick);
       } else {
-        widget.flow.press(IntentKind.move, dir);
+        widget.flow.press(IntentKind.move, dir, InputSource.joystick);
       }
     }
     const max = FloatingJoystick.ringRadius;
@@ -69,7 +74,9 @@ class _FloatingJoystickState extends State<FloatingJoystick> {
 
   void _up(PointerEvent e) {
     if (e.pointer != _pointer) return;
-    if (_dir != null) widget.flow.release(IntentKind.move);
+    if (_dir != null) {
+      widget.flow.release(IntentKind.move, InputSource.joystick);
+    }
     setState(() {
       _pointer = null;
       _dir = null;

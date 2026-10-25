@@ -54,7 +54,8 @@ class _HoldButtonState extends State<HoldButton> {
         onPointerCancel: _up,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 80),
-          height: 40,
+          // At least a 48 x 48 touch target.
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           decoration: BoxDecoration(
             color: pressed ? scheme.primary.withValues(alpha: 0.2) : null,
             border: Border.all(color: scheme.outline),

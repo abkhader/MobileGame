@@ -4,9 +4,12 @@ import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/game/floating_joystick.dart';
+import 'package:echo_app/game/flow_controller.dart';
+import 'package:echo_app/game/game_clock.dart';
 import 'package:echo_app/game/game_controller.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_core/echo_core.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -186,5 +189,124 @@ void main() {
     await t.tap(board);
     await settle(t);
     expect(_game(t).state.tick, 0);
+  });
+
+  testWidgets('a cancelled joystick pointer releases the move', (t) async {
+    await _pumpGame(t, '2-03');
+    final stick = await dragJoystick(t, const Offset(60, 0));
+    await t.pump(beat);
+    expect(_game(t).state.tick, greaterThan(0));
+    await stick.cancel();
+    await settle(t);
+    expect(_flow(t).held as List, isEmpty);
+    expect(_flow(t).clock.running as bool, isFalse);
+    final tick = _game(t).state.tick;
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(_game(t).state.tick, tick);
+  });
+
+  testWidgets('a cancelled hold-button pointer releases the wait', (t) async {
+    await _pumpGame(t, '2-03');
+    final wait = await t.startGesture(
+      t.getCenter(find.bySemanticsLabel('Wait')),
+    );
+    await t.pump(beat);
+    expect(_game(t).state.tick, greaterThan(0));
+    await wait.cancel();
+    await settle(t);
+    expect(_flow(t).held as List, isEmpty);
+    final tick = _game(t).state.tick;
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(_game(t).state.tick, tick);
+  });
+
+  testWidgets('releasing an arrow key keeps the joystick direction', (t) async {
+    await _pumpGame(t, '2-03');
+    final stick = await dragJoystick(t, const Offset(60, 0));
+    await t.pump(beat);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+    final flow = _flow(t) as FlowController;
+    expect(flow.held, [(InputSource.joystick, IntentKind.move, Move.right)]);
+    final x = _game(t).state.player.x;
+    await pumpFrames(t, const Duration(milliseconds: 450));
+    expect(_game(t).state.player.x, greaterThan(x));
+    await stick.up();
+    await settle(t);
+  });
+
+  testWidgets('losing key focus releases key-held intents', (t) async {
+    await _pumpGame(t, '2-03');
+    await t.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await t.pump(beat);
+    expect(_flow(t).held as List, isNotEmpty);
+    FocusManager.instance.primaryFocus!.unfocus();
+    await t.pump(beat);
+    expect(_flow(t).held as List, isEmpty);
+    await settle(t);
+    final tick = _game(t).state.tick;
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(_game(t).state.tick, tick);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.space);
+  });
+
+  testWidgets('Ctrl, Cmd or Alt with a key is left to the browser', (t) async {
+    await _pumpGame(t, '2-03');
+    await tapKey(t, LogicalKeyboardKey.space);
+    expect(_game(t).state.tick, 1);
+    for (final mod in [
+      LogicalKeyboardKey.controlLeft,
+      LogicalKeyboardKey.metaLeft,
+      LogicalKeyboardKey.altLeft,
+    ]) {
+      await t.sendKeyDownEvent(mod);
+      for (final key in [
+        LogicalKeyboardKey.keyR,
+        LogicalKeyboardKey.keyE,
+        LogicalKeyboardKey.arrowRight,
+      ]) {
+        expect(await t.sendKeyDownEvent(key), isFalse);
+        await t.sendKeyUpEvent(key);
+      }
+      await t.sendKeyUpEvent(mod);
+      await settle(t);
+    }
+    expect(_game(t).state.tick, 1);
+    expect(_game(t).state.runIndex, 0);
+  });
+
+  testWidgets('keys still work after tapping a button', (t) async {
+    await _pumpGame(t, '2-03');
+    for (final label in ['Restart', 'Hint']) {
+      await t.tap(find.text(label));
+      await t.pump(beat);
+      final x = _game(t).state.player.x;
+      await tapKey(t, LogicalKeyboardKey.arrowRight);
+      expect(_game(t).state.player.x, x + 1, reason: 'after $label');
+    }
+  });
+
+  testWidgets('hold buttons are at least 48 x 48', (t) async {
+    await _pumpGame(t, '2-03');
+    for (final label in ['Wait', 'Rewind time']) {
+      final size = t.getSize(find.bySemanticsLabel(label));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
+  });
+
+  testWidgets('the joystick ignores a secondary mouse button', (t) async {
+    await _pumpGame(t, '2-03');
+    final r = t.getRect(board);
+    final mouse = await t.startGesture(
+      Offset(r.center.dx, r.top + r.height * 0.8),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await mouse.moveBy(const Offset(60, 0));
+    await t.pump(beat);
+    await t.pump(beat);
+    expect(_game(t).state.tick, 0);
+    await mouse.up();
   });
 }

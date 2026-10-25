@@ -331,6 +331,12 @@ class _GameScreenState extends State<GameScreen>
       autofocus: true,
       // Keys only: a semantics node here would merge the HUD labels.
       includeSemantics: false,
+      // A KeyUp missed while focus was elsewhere must not leave Pip walking.
+      onFocusChange: (focused) {
+        if (focused) return;
+        _flow?.releaseSource(InputSource.keys);
+        _syncTicker();
+      },
       onKeyEvent: (_, e) {
         final result = flowKeyHandler(
           e,
@@ -447,7 +453,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _holdButton(IconData icon, String label, IntentKind kind) => SizedBox(
-    width: 52,
+    width: 56,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: HoldButton(

@@ -4,6 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'game_clock.dart';
 import 'game_controller.dart';
 
+/// Where a held input comes from. Each source holds its own intents, so a
+/// key release never drops what the joystick still holds.
+enum InputSource { joystick, keys, button }
+
 /// Maps clock beats onto [GameController]: move, wait and rewind.
 class FlowController extends ChangeNotifier {
   FlowController({required this.game, required MoveSpeed Function() speed}) {
@@ -31,31 +35,43 @@ class FlowController extends ChangeNotifier {
 
   bool get frozen => !clock.running;
 
-  final List<(IntentKind, Move?)> _held = [];
+  final List<(InputSource, IntentKind, Move?)> _held = [];
 
-  /// Held inputs, oldest first. The last one drives the clock.
-  List<(IntentKind, Move?)> get held => List.unmodifiable(_held);
+  /// Held inputs, oldest first, one per source and kind. The last one drives
+  /// the clock.
+  List<(InputSource, IntentKind, Move?)> get held => List.unmodifiable(_held);
 
   /// Low level: sets the clock's intent directly. Inputs use [press] and
   /// [release] so two thumbs (or keys) arbitrate.
   void setIntent(IntentKind kind, [Move? dir]) => clock.setIntent(kind, dir);
 
-  /// An input of [kind] went down (or a held move changed direction). The
-  /// latest press wins.
-  void press(IntentKind kind, [Move? dir]) {
+  /// An input of [kind] from [source] went down (or a held move changed
+  /// direction). The latest press wins.
+  void press(
+    IntentKind kind, [
+    Move? dir,
+    InputSource source = InputSource.button,
+  ]) {
     if (kind == IntentKind.none) return;
     final before = _top;
     _held
-      ..removeWhere((e) => e.$1 == kind)
-      ..add((kind, kind == IntentKind.move ? dir : null));
+      ..removeWhere((e) => e.$1 == source && e.$2 == kind)
+      ..add((source, kind, kind == IntentKind.move ? dir : null));
     if (_top != before) _applyTop();
   }
 
-  /// The input of [kind] was let go: the previous held input, if any, takes
-  /// over again.
-  void release(IntentKind kind) {
+  /// The input of [kind] from [source] was let go: the previous held input,
+  /// if any, takes over again.
+  void release(IntentKind kind, [InputSource source = InputSource.button]) {
     final before = _top;
-    _held.removeWhere((e) => e.$1 == kind);
+    _held.removeWhere((e) => e.$1 == source && e.$2 == kind);
+    if (_top != before) _applyTop();
+  }
+
+  /// Lets go of everything [source] holds, e.g. keys when focus leaves.
+  void releaseSource(InputSource source) {
+    final before = _top;
+    _held.removeWhere((e) => e.$1 == source);
     if (_top != before) _applyTop();
   }
 
@@ -65,7 +81,9 @@ class FlowController extends ChangeNotifier {
     clock.setIntent(IntentKind.none);
   }
 
-  (IntentKind, Move?)? get _top => _held.isEmpty ? null : _held.last;
+  /// The winning intent; sources do not matter for the clock.
+  (IntentKind, Move?)? get _top =>
+      _held.isEmpty ? null : (_held.last.$2, _held.last.$3);
 
   void _applyTop() {
     final top = _top;
