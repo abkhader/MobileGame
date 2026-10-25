@@ -33,7 +33,8 @@ Success:
 - While an input is held, the game clock fires one beat per beat length; rendering interpolates between beats, so motion is continuous.
 
 ### 2.2 Moving (phone)
-- Touching anywhere in the **lower 60 % of the board area** that is not a button spawns a **floating joystick** under the thumb (a ring and a knob). Dragging the knob past a **dead zone of 12 logical px** selects the dominant direction (ties → horizontal).
+- Touching anywhere on the **board area** that is not a button spawns a **floating joystick** under the thumb (a ring and a knob). Dragging the knob past a **dead zone of 12 logical px** selects the dominant direction (ties → horizontal). Dragged past the ring, the joystick's centre follows the thumb, so turning never needs the thumb to travel back.
+- *Amended 2026-10-25 (final review ruling; the owner can veto): the joystick spawns anywhere on the board area, not only in its lower 60 %. Buttons sit outside the board, so the limit protected nothing, and the 1-01 tip says "Drag anywhere".*
 - While the knob stays outside the dead zone, Pip moves one tile per beat in the selected direction; changing direction takes effect on the next beat (corners feel immediate).
 - Lifting the thumb, or returning inside the dead zone, stops the clock after the current beat finishes animating — **time freezes**.
 
@@ -74,11 +75,12 @@ Success:
 
 - **Rules, solver, levels unchanged.** `packages/echo_core`, `tools/echo_solver`, level grids, best scores and solutions are untouched; stored solutions replay exactly under the new controls (pushes included).
 - **Hints:** a hint shows a glowing path for the next **4 beats** of the stored solution from the current state (when the state matches the solution, as today); waits appear as a ⏳ marker on Pip's tile; pushes (blocked moves) appear as a push arrow against the obstacle.
-- **Tutorial tips** (CI tip rule expands from 1-01..1-03 to 1-01..1-04):
+- **Tutorial tips** (CI tip rule becomes 1-01, 1-02, 1-03 and 1-07):
   - 1-01: `Drag anywhere to move Pip.` — plus a looping thumb-drag hint animation until Pip first moves.
   - 1-02: `Plates open doors, but only while something stands on them.` (unchanged)
   - 1-03: `Tap New echo. Pip starts over, and your echo repeats every move.` — New echo pulses until first used (existing pulse behaviour).
-  - 1-04: `Hold ⏳ to let time pass while Pip stays still.`
+  - 1-07: `Hold ⏳ to let time pass while Pip stays still.`
+  - *Amended 2026-10-25 (final review ruling; the owner can veto): the ⏳ tip moved from 1-04 to 1-07. 1-04's solution never waits; 1-07 is the first level whose solution does.*
 - **Settings additions:** Movement speed (Slow / Normal / Fast, default Normal), Reduce effects (off), Vibration (on). Saved like other settings.
 - **Unchanged:** story, cards, city map, Home, ads, progress, scoring.
 
@@ -94,10 +96,10 @@ Success:
 
 - `GameClock` unit tests with a fake time source: holding a move fires one beat per beat length at each speed; release stops after the current beat; direction change applies next beat; wait and rewind fire at their rates; rewind stops at run start.
 - Push tests: holding into a wall advances `tick` one per beat and fires a push signal each beat; stored solutions replay through the controller to their best score.
-- Joystick tests: dead zone, dominant-axis choice, ties → horizontal, spawn only in the lower 60 % and not on buttons.
+- Joystick tests: dead zone, dominant-axis choice, ties → horizontal, spawn anywhere on the board area and not on buttons; re-anchoring when dragged past the ring.
 - Keyboard tests: each key maps to the right intent; key up clears it.
-- Widget tests: New echo / Give up labels; tip text for 1-01..1-04; hint path length 4 with ⏳ markers; settings persist and default correctly; reduce-effects disables trails.
-- CI: tip rule updated to 1-01..1-04; solver gate and level tests unchanged and passing; integration test plays 1-01 via the joystick.
+- Widget tests: New echo / Give up labels; tip text for 1-01..1-03 and 1-07; hint path length 4 with ⏳ markers; settings persist and default correctly; reduce-effects disables trails.
+- CI: tip rule updated to 1-01..1-03 and 1-07; solver gate and level tests unchanged and passing; integration test plays 1-01 via the joystick.
 - Testing rule unchanged: never `pumpAndSettle` with a Flame `GameWidget` on screen.
 
 ## 7. Out of scope (later rounds)
