@@ -37,10 +37,10 @@ Success:
 - While the knob stays outside the dead zone, Pip moves one tile per beat in the selected direction; changing direction takes effect on the next beat (corners feel immediate).
 - Lifting the thumb, or returning inside the dead zone, stops the clock after the current beat finishes animating — **time freezes**.
 
-### 2.3 Bumps
-- Before each beat, the controller asks the rules whether the chosen move is blocked for Pip (wall, closed door, off-grid) **using the same door state `Rules.step` uses**.
-- A blocked move does **not** step the game: no beat passes, no battery is used. Pip plays a short bump (a 4 px nudge toward the wall and back, 120 ms), a "tick" sound and a light haptic. Holding into the wall keeps bumping at most once per beat length.
-- This is behaviour-preserving: under the existing rules a blocked move was identical to a wait; the player now waits deliberately with ⏳ (2.4). Stored solutions that contain blocked moves still replay identically through `Rules.step`.
+### 2.3 Pushing (revised 2026-10-25 by owner decision)
+- A move into a wall, closed door or the grid edge is a **push**: it steps the game exactly as before (`Rules.step` with the attempted move), so a beat passes and battery is used, and the echo records the push. A later echo can therefore slip through when that door is open in its world — 13 of the 30 levels rely on this.
+- Visually Pip presses against the obstacle (a 4 px nudge toward it and back each beat, 120 ms), with a soft "push" sound and a light haptic.
+- (The earlier "bumps cost no time" rule was dropped: it made 13 levels unwinnable.)
 
 ### 2.4 Waiting — the ⏳ button
 - Right-thumb button. While held, the clock fires `Move.wait` beats; Pip stays put, everything else moves. Releasing freezes time.
@@ -72,8 +72,8 @@ Success:
 
 ## 4. Levels, hints, tutorial, settings
 
-- **Rules, solver, levels unchanged.** `packages/echo_core`, `tools/echo_solver`, level grids, best scores and solutions are untouched.
-- **Hints:** a hint shows a glowing path for the next **4 beats** of the stored solution from the current state (when the state matches the solution, as today); waits appear as a ⏳ marker on Pip's tile; blocked moves in the stored solution are displayed as waits.
+- **Rules, solver, levels unchanged.** `packages/echo_core`, `tools/echo_solver`, level grids, best scores and solutions are untouched; stored solutions replay exactly under the new controls (pushes included).
+- **Hints:** a hint shows a glowing path for the next **4 beats** of the stored solution from the current state (when the state matches the solution, as today); waits appear as a ⏳ marker on Pip's tile; pushes (blocked moves) appear as a push arrow against the obstacle.
 - **Tutorial tips** (CI tip rule expands from 1-01..1-03 to 1-01..1-04):
   - 1-01: `Drag anywhere to move Pip.` — plus a looping thumb-drag hint animation until Pip first moves.
   - 1-02: `Plates open doors, but only while something stands on them.` (unchanged)
@@ -93,7 +93,7 @@ Success:
 ## 6. Testing
 
 - `GameClock` unit tests with a fake time source: holding a move fires one beat per beat length at each speed; release stops after the current beat; direction change applies next beat; wait and rewind fire at their rates; rewind stops at run start.
-- Bump tests: holding into a wall or closed door never advances `tick`; holding into a door that opens via a ghost still bumps until the player waits; stored solutions with blocked moves replay to the same score.
+- Push tests: holding into a wall advances `tick` one per beat and fires a push signal each beat; stored solutions replay through the controller to their best score.
 - Joystick tests: dead zone, dominant-axis choice, ties → horizontal, spawn only in the lower 60 % and not on buttons.
 - Keyboard tests: each key maps to the right intent; key up clears it.
 - Widget tests: New echo / Give up labels; tip text for 1-01..1-04; hint path length 4 with ⏳ markers; settings persist and default correctly; reduce-effects disables trails.
