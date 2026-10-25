@@ -58,6 +58,7 @@ abstract final class LevelLoader {
     final doors = <String, List<Position>>{};
     final starts = <Position>[];
     final exits = <Position>[];
+    final sparks = <Position>[];
 
     for (var y = 0; y < rows.length; y++) {
       final row = <Tile>[];
@@ -68,6 +69,9 @@ abstract final class LevelLoader {
           case '#':
             row.add(const Tile(TileKind.wall));
           case '.':
+            row.add(const Tile(TileKind.floor));
+          case '*':
+            sparks.add(p);
             row.add(const Tile(TileKind.floor));
           case 'S':
             starts.add(p);
@@ -123,6 +127,7 @@ abstract final class LevelLoader {
       exit: exits.single,
       plates: plates,
       doors: doors,
+      sparks: sparks,
     );
   }
 

@@ -13,10 +13,12 @@ class Level {
     required this.exit,
     required Map<String, Position> plates,
     required Map<String, List<Position>> doors,
+    required List<Position> sparks,
     this.tip,
     this.bestScore,
     List<List<Move>>? solution,
   }) : _grid = List.unmodifiable(grid.map(List<Tile>.unmodifiable)),
+       sparks = List.unmodifiable(sparks),
        plates = Map.unmodifiable(plates),
        doors = Map.unmodifiable(
          doors.map((k, v) => MapEntry(k, List<Position>.unmodifiable(v))),
@@ -41,6 +43,9 @@ class Level {
 
   /// Door positions keyed by lowercase channel letter.
   final Map<String, List<Position>> doors;
+
+  /// Spark positions (floor tiles) in reading order (row-major).
+  final List<Position> sparks;
 
   final List<List<Tile>> _grid;
 

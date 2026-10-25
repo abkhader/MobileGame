@@ -23,6 +23,11 @@ abstract final class Rules {
     }
     final player = _move(level, s.player, m, s.openDoors);
 
+    final collected =
+        level.sparks.contains(player) && !s.collected.contains(player)
+        ? {...s.collected, player}
+        : s.collected;
+
     final next = GameState(
       level: level,
       runIndex: s.runIndex,
@@ -34,6 +39,7 @@ abstract final class Rules {
       openDoors: _openDoors(level, [...ghostPositions, player]),
       completedTicks: s.completedTicks,
       status: player == level.exit ? GameStatus.won : GameStatus.playing,
+      collected: collected,
     );
     if (next.status == GameStatus.playing && next.tick == maxTicksPerRun) {
       return endRun(next);
@@ -64,6 +70,7 @@ abstract final class Rules {
         openDoors: s.openDoors,
         completedTicks: s.completedTicks,
         status: GameStatus.lost,
+        collected: s.collected,
       );
     }
     final ghosts = [...s.ghosts, s.currentRun];
@@ -80,6 +87,7 @@ abstract final class Rules {
       openDoors: _openDoors(level, [...ghostPositions, level.start]),
       completedTicks: completedTicks,
       status: GameStatus.playing,
+      collected: s.collected,
     );
   }
 

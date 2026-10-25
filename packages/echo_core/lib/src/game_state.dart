@@ -21,10 +21,12 @@ class GameState {
     required Set<Position> openDoors,
     required this.completedTicks,
     required this.status,
+    required Set<Position> collected,
   }) : currentRun = List.unmodifiable(currentRun),
        ghosts = List.unmodifiable(ghosts.map(List<Move>.unmodifiable)),
        ghostPositions = List.unmodifiable(ghostPositions),
-       openDoors = Set.unmodifiable(openDoors);
+       openDoors = Set.unmodifiable(openDoors),
+       collected = Set.unmodifiable(collected);
 
   factory GameState.initial(Level level) => GameState(
     level: level,
@@ -37,6 +39,7 @@ class GameState {
     openDoors: const {},
     completedTicks: 0,
     status: GameStatus.playing,
+    collected: const {},
   );
 
   final Level level;
@@ -57,6 +60,9 @@ class GameState {
   final Set<Position> openDoors;
   final int completedTicks;
   final GameStatus status;
+
+  /// Sparks Pip has grabbed so far; carried across runs.
+  final Set<Position> collected;
 
   int get score => completedTicks + tick;
 }
