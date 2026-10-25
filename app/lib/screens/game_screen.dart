@@ -3,12 +3,10 @@ import 'dart:async';
 import 'package:echo_core/echo_core.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
 import '../app_services.dart';
 import '../art/pip.dart';
 import '../audio/game_sounds.dart';
-import '../game/battery_bar.dart';
 import '../game/echo_board.dart';
 import '../game/floating_joystick.dart';
 import '../game/flow_controller.dart';
@@ -37,14 +35,11 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const _winDelay = Duration(milliseconds: 400);
 
   GameController? _controller;
   FlowController? _flow;
-  late final Ticker _ticker = createTicker(_onTick);
-  Duration _lastTick = Duration.zero;
   GameState? _lastState;
   EchoBoard? _board;
   bool _failed = false;
@@ -61,6 +56,9 @@ class _GameScreenState extends State<GameScreen>
 
   @visibleForTesting
   FlowController? get flowForTesting => _flow;
+
+  @visibleForTesting
+  EchoBoard? get boardForTesting => _board;
 
   @override
   void initState() {
@@ -79,13 +77,14 @@ class _GameScreenState extends State<GameScreen>
       if (!mounted) return;
       final controller = GameController(level)..addListener(_onChanged);
       _lastState = controller.state;
+      final flow = FlowController(
+        game: controller,
+        speed: () => widget.services.progress.moveSpeed,
+      );
       setState(() {
         _controller = controller;
-        _flow = FlowController(
-          game: controller,
-          speed: () => widget.services.progress.moveSpeed,
-        );
-        _board = EchoBoard(controller);
+        _flow = flow;
+        _board = EchoBoard(flow);
       });
     } catch (_) {
       if (mounted) setState(() => _failed = true);
@@ -114,33 +113,18 @@ class _GameScreenState extends State<GameScreen>
     setState(() {});
   }
 
-  // Drives the flow clock. Runs only while the clock runs, so a frozen game
-  // forces no frames. Task 4 may move this into the board's update(dt).
-  void _syncTicker() {
-    final running = _flow?.clock.running ?? false;
-    if (running && !_ticker.isActive) {
-      _lastTick = Duration.zero;
-      _ticker.start();
-    } else if (!running && _ticker.isActive) {
-      _ticker.stop();
-    }
-  }
-
-  void _onTick(Duration elapsed) {
-    final dt = elapsed - _lastTick;
-    _lastTick = elapsed;
-    _flow?.advance(dt.inMicroseconds / Duration.microsecondsPerSecond);
-    _syncTicker();
-  }
+  // The board's game loop drives the flow clock and pauses itself once time
+  // is frozen and its effects have settled. Any input wakes it.
+  void _wake() => _board?.wake();
 
   void _press(IntentKind kind, [Move? dir]) {
     _flow?.press(kind, dir);
-    _syncTicker();
+    _wake();
   }
 
   void _release(IntentKind kind) {
     _flow?.release(kind);
-    _syncTicker();
+    _wake();
   }
 
   @override
@@ -152,7 +136,7 @@ class _GameScreenState extends State<GameScreen>
         _flow
           ?..clock.stop()
           ..releaseAll();
-        _syncTicker();
+        _wake();
       case AppLifecycleState.resumed || AppLifecycleState.detached:
         break;
     }
@@ -289,7 +273,6 @@ class _GameScreenState extends State<GameScreen>
     _winTimer?.cancel();
     _tipTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _ticker.dispose();
     _flow?.dispose();
     _controller?.dispose();
     super.dispose();
@@ -335,7 +318,7 @@ class _GameScreenState extends State<GameScreen>
       onFocusChange: (focused) {
         if (focused) return;
         _flow?.releaseSource(InputSource.keys);
-        _syncTicker();
+        _wake();
       },
       onKeyEvent: (_, e) {
         final result = flowKeyHandler(
@@ -344,7 +327,7 @@ class _GameScreenState extends State<GameScreen>
           onNewEcho: _newEcho,
           onRestart: _restart,
         );
-        _syncTicker();
+        _wake();
         return result;
       },
       child: _buildColumn(context, c),
@@ -353,6 +336,8 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _buildColumn(BuildContext context, GameController c) {
     final state = c.state;
+    // Task 5 adds a Reduce effects setting; until then follow the OS.
+    _board!.reduceEffects = MediaQuery.disableAnimationsOf(context);
     final tip = c.level.tip;
     final textTheme = Theme.of(context).textTheme;
     return Column(
@@ -363,7 +348,13 @@ class _GameScreenState extends State<GameScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _RunDots(runIndex: state.runIndex, runLimit: c.level.runLimit),
-              BatteryBar(tick: state.tick),
+              // The battery is drawn as a ring above Pip; screen readers
+              // still get the exact count here.
+              Semantics(
+                label:
+                    'Battery, ${Rules.maxTicksPerRun - state.tick} moves left',
+                child: const SizedBox(width: 1, height: 1),
+              ),
             ],
           ),
         ),
@@ -392,7 +383,7 @@ class _GameScreenState extends State<GameScreen>
                 child: _BoardInput(
                   key: const Key('board'),
                   flow: _flow!,
-                  onChanged: _syncTicker,
+                  onChanged: _wake,
                   // The screen's Focus takes the keys; Flame would eat them.
                   child: GameWidget(game: _board!, autofocus: false),
                 ),
@@ -529,7 +520,7 @@ class _BoardInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Listener(
-    // Runs after the joystick's own handlers: wake the ticker if needed.
+    // Runs after the joystick's own handlers: wake the board if needed.
     onPointerDown: (_) => onChanged(),
     onPointerMove: (_) => onChanged(),
     onPointerUp: (_) => onChanged(),

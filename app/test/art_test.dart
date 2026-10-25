@@ -42,6 +42,18 @@ Future<void> _draw(Size size, void Function(Canvas canvas) paint) async {
   picture.dispose();
 }
 
+/// The raw RGBA bytes of what [paint] draws.
+Future<List<int>> _pixels(Size size, void Function(Canvas canvas) paint) async {
+  final recorder = ui.PictureRecorder();
+  paint(Canvas(recorder));
+  final picture = recorder.endRecording();
+  final image = await picture.toImage(size.width.ceil(), size.height.ceil());
+  final data = await image.toByteData();
+  image.dispose();
+  picture.dispose();
+  return data!.buffer.asUint8List();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -85,6 +97,57 @@ void main() {
       paintPip(c, const Offset(10, 10), 4, Colors.cyan, eyeOpen: 0);
       paintPip(c, const Offset(90, 90), 12, Colors.white, opacity: 0.4);
     });
+  });
+
+  test('paintPip draws with lean, stretch and lookDir', () async {
+    const size = Size(120, 120);
+    await _draw(size, (c) {
+      paintPip(
+        c,
+        const Offset(60, 60),
+        40,
+        Colors.white,
+        lean: 0.14,
+        stretch: 0.08,
+        lookDir: const Offset(1, 0),
+      );
+      paintPip(
+        c,
+        const Offset(20, 20),
+        12,
+        Colors.cyan,
+        lean: -0.14,
+        stretch: -0.1,
+        lookDir: const Offset(0, -1),
+      );
+    });
+  });
+
+  test('paintPip defaults keep the old pixels; a pose changes them', () async {
+    const size = Size(96, 96);
+    const center = Offset(48, 48);
+    final plain = await _pixels(
+      size,
+      (c) => paintPip(c, center, 30, Colors.white),
+    );
+    final zeros = await _pixels(
+      size,
+      (c) => paintPip(
+        c,
+        center,
+        30,
+        Colors.white,
+        lean: 0,
+        stretch: 0,
+        lookDir: Offset.zero,
+      ),
+    );
+    final posed = await _pixels(
+      size,
+      (c) => paintPip(c, center, 30, Colors.white, lean: 0.14, stretch: 0.08),
+    );
+    expect(zeros, plain);
+    expect(posed, isNot(plain));
   });
 
   test('a solved building lights one window per star', () {

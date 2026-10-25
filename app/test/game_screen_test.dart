@@ -6,6 +6,8 @@ import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_core/echo_core.dart';
+import 'package:echo_app/game/battery_bar.dart';
+import 'package:echo_app/game/echo_board.dart';
 import 'package:echo_app/game/game_controller.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:flutter/material.dart';
@@ -66,6 +68,9 @@ bool _enabled(WidgetTester t, String label) => t
 
 Future<void> _stepRight(WidgetTester t) =>
     tapKey(t, LogicalKeyboardKey.arrowRight);
+
+EchoBoard _board(WidgetTester t) =>
+    (t.state(find.byType(GameScreen)) as dynamic).boardForTesting as EchoBoard;
 
 bool _waitButtonFound() => find.bySemanticsLabel('Wait').evaluate().isNotEmpty;
 
@@ -224,5 +229,55 @@ void main() {
     await t.pump(_frame);
     expect(find.text('Level complete'), findsOneWidget);
     expect(find.text('Skip level'), findsNothing);
+  });
+
+  testWidgets('the battery is a ring: HUD keeps only its label', (t) async {
+    await _pumpGame(t, '1-03');
+    await _stepRight(t);
+    expect(find.byType(BatteryBar), findsNothing);
+    expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
+  });
+
+  testWidgets('the board pauses when time freezes; a press resumes it', (
+    t,
+  ) async {
+    await _pumpGame(t, '1-03');
+    expect(_board(t).paused, isTrue);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    expect(_board(t).paused, isFalse);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await settle(t);
+    // The glide is done; trail, lean and squash fade within a few frames.
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(_board(t).paused, isTrue);
+    // Holding Wait wakes it even though Pip does not move.
+    final wait = await t.startGesture(
+      t.getCenter(find.bySemanticsLabel('Wait')),
+    );
+    await t.pump(const Duration(milliseconds: 50));
+    expect(_board(t).paused, isFalse);
+    await wait.up();
+    await settle(t);
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(_board(t).paused, isTrue);
+  });
+
+  testWidgets('OS reduce motion turns on the board\'s reduceEffects', (
+    t,
+  ) async {
+    final services = await _services(t);
+    await t.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: GameScreen(services: services, levelId: '1-03'),
+        ),
+      ),
+    );
+    await t.pump(_frame);
+    await t.pump(_frame);
+    expect(_board(t).reduceEffects, isTrue);
+    await _stepRight(t);
+    expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);
   });
 }

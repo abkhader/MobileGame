@@ -11,4 +11,7 @@ const platePressed = Color(0xFF39FF14);
 const doorClosed = Color(0xFF7C4DFF);
 const doorOpen = Color(0x407C4DFF);
 
+const batteryLow = Color(0xFFFF3B3B);
+const batteryLowDim = Color(0x66FF3B3B);
+
 const tickDuration = Duration(milliseconds: 150);

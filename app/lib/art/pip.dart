@@ -54,6 +54,12 @@ Shader _bodyShader(Color color, double r, double a) {
 ///
 /// [eyeOpen] runs from 0 (closed, drawn as a lid line) to 1 (wide open);
 /// [opacity] fades the whole bot.
+///
+/// Pose: [lookDir] shifts the eye toward a direction (length up to 1);
+/// [lean] tilts the bot by that many radians (positive leans right);
+/// [stretch] scales it along [lookDir] (vertical when zero) by 1 + stretch,
+/// keeping its area, so negative values squash. The defaults draw the
+/// resting bot.
 void paintPip(
   Canvas canvas,
   Offset center,
@@ -61,6 +67,9 @@ void paintPip(
   Color color, {
   double eyeOpen = 1.0,
   double opacity = 1.0,
+  Offset lookDir = Offset.zero,
+  double lean = 0,
+  double stretch = 0,
 }) {
   if (radius <= 0 || opacity <= 0) return;
   final r = radius;
@@ -74,6 +83,18 @@ void paintPip(
 
   canvas.save();
   canvas.translate(center.dx, center.dy);
+  if (lean != 0) canvas.rotate(lean);
+  if (stretch != 0) {
+    // Scale along the travel axis: rotate onto it, scale, rotate back.
+    final axis = lookDir == Offset.zero
+        ? math.pi / 2
+        : math.atan2(lookDir.dy, lookDir.dx);
+    final along = (1 + stretch).clamp(0.5, 1.5);
+    canvas
+      ..rotate(axis)
+      ..scale(along, 1 / along)
+      ..rotate(-axis);
+  }
 
   // Soft halo.
   canvas.drawCircle(
@@ -114,7 +135,8 @@ void paintPip(
   );
 
   // Eye: one big dark lens, slightly above centre.
-  final eyeCenter = Offset(0, -r * 0.08);
+  final look = lookDir.distance > 1 ? lookDir / lookDir.distance : lookDir;
+  final eyeCenter = Offset(look.dx * r * 0.14, -r * 0.08 + look.dy * r * 0.1);
   final eyeW = r * 0.95;
   final eyeH = r * 0.95 * eye;
   final ink = palette.background;
