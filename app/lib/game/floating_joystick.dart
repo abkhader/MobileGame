@@ -17,9 +17,14 @@ Move? joystickDirection(Offset delta, {double deadZone = 12}) {
   return delta.dy > 0 ? Move.down : Move.up;
 }
 
+/// How far the steering centre trails the thumb, in logical px. Shorter than
+/// the drawn ring, so corners turn after a short move.
+const double _leash = 20;
+
 /// A joystick that appears wherever a thumb lands on [child] and holds a
-/// move while the thumb is pushed off-centre. Dragged past the ring, the
-/// centre follows the thumb, so turning never needs the thumb to travel back.
+/// move while the thumb is pushed off-centre. The steering centre trails the
+/// thumb on a short leash (20 px), so a turn needs only a short move; the
+/// drawn ring follows separately at its own radius.
 ///
 /// Pointer moves never rebuild: the ring and knob repaint alone, inside their
 /// own [RepaintBoundary].
@@ -41,7 +46,12 @@ typedef _Stick = ({Offset origin, Offset knob});
 
 class _FloatingJoystickState extends State<FloatingJoystick> {
   int? _pointer;
+
+  /// Steering centre: direction is measured from here.
   Offset _origin = Offset.zero;
+
+  /// Where the ring is drawn; follows the thumb at the ring's radius.
+  Offset _ring = Offset.zero;
   Move? _dir;
   final _stick = ValueNotifier<_Stick?>(null);
 
@@ -82,18 +92,24 @@ class _FloatingJoystickState extends State<FloatingJoystick> {
     }
     _pointer = e.pointer;
     _origin = e.localPosition;
-    _stick.value = (origin: _origin, knob: Offset.zero);
+    _ring = e.localPosition;
+    _stick.value = (origin: _ring, knob: Offset.zero);
   }
 
   void _move(PointerMoveEvent e) {
     if (e.pointer != _pointer) return;
+    final pos = e.localPosition;
+    var delta = pos - _origin;
+    if (delta.distance > _leash) {
+      // Pull the steering centre along behind the thumb.
+      delta = delta / delta.distance * _leash;
+      _origin = pos - delta;
+    }
     const max = FloatingJoystick.ringRadius;
-    var delta = e.localPosition - _origin;
-    final distance = delta.distance;
-    if (distance > max) {
-      // Pull the centre along behind the thumb.
-      delta = delta / distance * max;
-      _origin = e.localPosition - delta;
+    var knob = pos - _ring;
+    if (knob.distance > max) {
+      knob = knob / knob.distance * max;
+      _ring = pos - knob;
     }
     final dir = joystickDirection(delta);
     if (dir != _dir) {
@@ -104,7 +120,7 @@ class _FloatingJoystickState extends State<FloatingJoystick> {
         widget.flow.press(IntentKind.move, dir, InputSource.joystick);
       }
     }
-    _stick.value = (origin: _origin, knob: delta);
+    _stick.value = (origin: _ring, knob: knob);
   }
 
   void _up(PointerEvent e) {

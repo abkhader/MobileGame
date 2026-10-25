@@ -89,10 +89,10 @@ void main() {
     }
     final flow = _flow(t) as FlowController;
     expect(flow.held, [(InputSource.joystick, IntentKind.move, Move.right)]);
-    // The centre trails 44 px behind the thumb, so about 45 px straight up
-    // turns it. Without re-anchoring the thumb, 100 px out, would need more
-    // than 100 px.
-    for (var i = 0; i < 15; i++) {
+    // The steering centre trails 20 px behind the thumb, so at most 30 px
+    // straight up turns it. Without re-anchoring the thumb, 100 px out,
+    // would need more than 100 px.
+    for (var i = 0; i < 10; i++) {
       await g.moveBy(const Offset(0, -3));
     }
     expect(flow.held, [(InputSource.joystick, IntentKind.move, Move.up)]);
