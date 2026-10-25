@@ -8,6 +8,7 @@ import 'game_controller.dart';
 class FlowController extends ChangeNotifier {
   FlowController({required this.game, required MoveSpeed Function() speed}) {
     clock = GameClock(beatLength: () => speed().beat, onBeat: _onBeat);
+    game.addListener(_onGameChanged);
   }
 
   final GameController game;
@@ -23,9 +24,10 @@ class FlowController extends ChangeNotifier {
 
   double get beatProgress => clock.beatProgress;
 
-  /// The state before the current beat, for interpolation. Null when idle,
-  /// after a run change or while rewinding.
-  GameState? get from => clock.running ? _from : null;
+  /// The state before the latest beat, for interpolation. Null only when no
+  /// beat has happened yet or after a run change. It stays readable after the
+  /// clock stops, so the last move still animates.
+  GameState? get from => _from;
 
   bool get frozen => !clock.running;
 
@@ -48,8 +50,8 @@ class FlowController extends ChangeNotifier {
       case IntentKind.wait:
         _step(Move.wait);
       case IntentKind.rewind:
-        _from = null;
         if (game.canUndo) {
+          _from = game.state;
           game.undo();
           notifyListeners();
         } else {
@@ -62,17 +64,24 @@ class FlowController extends ChangeNotifier {
   void _step(Move m) {
     game.move(m);
     _from = game.previous;
+    notifyListeners();
+  }
+
+  /// Any run end, including New echo and Give up from outside, stops a held
+  /// input so the next run does not start moving on its own.
+  void _onGameChanged() {
     switch (game.lastEvent) {
       case GameEvent.runEnded || GameEvent.won || GameEvent.lost:
         clock.stop();
+        _from = game.previous;
       case GameEvent.none || GameEvent.moved:
         break;
     }
-    notifyListeners();
   }
 
   @override
   void dispose() {
+    game.removeListener(_onGameChanged);
     clock.stop();
     _bumps.dispose();
     _bumpDir.dispose();

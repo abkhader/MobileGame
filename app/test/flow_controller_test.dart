@@ -134,11 +134,15 @@ void main() {
     final f = _flow(game);
     f.setIntent(IntentKind.move, Move.right);
     _hold(f, 0.25);
+    expect(game.state.tick, 2);
     game.endRun();
-    f.setIntent(IntentKind.move, Move.right);
-    f.advance(0.01);
-    game.endRun();
-    f.advance(0.2);
+    expect(f.clock.running, isFalse);
+    expect(f.frozen, isTrue);
+    expect(game.state.tick, 0);
+    _hold(f, 1);
+    expect(game.state.tick, 0);
+    expect(game.state.runIndex, 1);
+    expect(f.from, isNull);
 
     final g2 = GameController(_level(['aSAE'], runLimit: 3));
     final f2 = _flow(g2);
@@ -161,5 +165,45 @@ void main() {
     expect(f.frozen, isTrue);
     _hold(f, 1);
     expect(game.state.tick, 1);
+  });
+
+  test('forward beat interpolates from the previous state', () {
+    final game = GameController(_level(['S...E']));
+    final f = _flow(game);
+    final before = game.state;
+    f.setIntent(IntentKind.move, Move.right);
+    expect(f.from, same(before));
+    expect(f.beatProgress, 0);
+    f.advance(0.1);
+    expect(f.beatProgress, closeTo(0.5, 1e-6));
+    f.advance(0.0999);
+    expect(f.beatProgress, closeTo(1, 0.01));
+    expect(f.from, same(before));
+  });
+
+  test('rewind beat interpolates from the state before the undo', () {
+    final game = GameController(_level(['S...E']));
+    final f = _flow(game);
+    for (var i = 0; i < 3; i++) {
+      f.setIntent(IntentKind.move, Move.right);
+      f.setIntent(IntentKind.none);
+      f.advance(0.2);
+    }
+    final before = game.state;
+    f.setIntent(IntentKind.rewind);
+    expect(game.state.tick, 2);
+    expect(f.from, same(before));
+    expect(f.beatProgress, 0);
+    f.advance(0.05);
+    expect(f.beatProgress, closeTo(0.5, 1e-6));
+  });
+
+  test('the winning beat keeps from after the clock stops', () {
+    final game = GameController(_level(['SE']));
+    final f = _flow(game);
+    final before = game.state;
+    f.setIntent(IntentKind.move, Move.right);
+    expect(f.frozen, isTrue);
+    expect(f.from, same(before));
   });
 }
