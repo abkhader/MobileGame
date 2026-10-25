@@ -6,6 +6,7 @@ import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/game/battery_bar.dart';
+import 'package:echo_app/game/game_clock.dart';
 import 'package:echo_app/screens/city_map_screen.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_app/screens/home_screen.dart';
@@ -121,6 +122,10 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   bool get endingSeen => _inner.endingSeen;
   @override
   Future<void> markEndingSeen() => _inner.markEndingSeen();
+  @override
+  MoveSpeed get moveSpeed => _inner.moveSpeed;
+  @override
+  Future<void> setMoveSpeed(MoveSpeed value) => _inner.setMoveSpeed(value);
 }
 
 /// Waits for the real-async asset loads behind a tap, then pumps a few frames.

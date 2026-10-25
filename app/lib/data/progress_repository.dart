@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../game/game_clock.dart';
+
 class LevelProgress {
   const LevelProgress({this.completed = false, this.stars = 0});
 
@@ -21,6 +23,7 @@ class ProgressRepository extends ChangeNotifier {
     this._seenChapters,
     this._endingSeen,
     this._rewindTipsShown,
+    this._moveSpeed,
   );
 
   static const storageKey = 'echo.progress.v1';
@@ -33,6 +36,7 @@ class ProgressRepository extends ChangeNotifier {
   final Set<int> _seenChapters;
   bool _endingSeen;
   int _rewindTipsShown;
+  MoveSpeed _moveSpeed;
 
   static Future<ProgressRepository> open() async {
     final prefs = await SharedPreferences.getInstance();
@@ -42,6 +46,7 @@ class ProgressRepository extends ChangeNotifier {
     final seenChapters = <int>{};
     var endingSeen = false;
     var rewindTipsShown = 0;
+    var moveSpeed = MoveSpeed.normal;
     try {
       final raw = prefs.getString(storageKey);
       if (raw != null) {
@@ -65,6 +70,13 @@ class ProgressRepository extends ChangeNotifier {
           }
           final tips = decoded['rewindTipsShown'];
           if (tips is int && tips > 0) rewindTipsShown = tips;
+          final speed = decoded['moveSpeed'];
+          if (speed is String) {
+            moveSpeed = MoveSpeed.values.firstWhere(
+              (m) => m.name == speed,
+              orElse: () => MoveSpeed.normal,
+            );
+          }
         }
       }
     } catch (_) {
@@ -74,6 +86,7 @@ class ProgressRepository extends ChangeNotifier {
       seenChapters.clear();
       endingSeen = false;
       rewindTipsShown = 0;
+      moveSpeed = MoveSpeed.normal;
     }
     return ProgressRepository._(
       prefs,
@@ -83,12 +96,14 @@ class ProgressRepository extends ChangeNotifier {
       seenChapters,
       endingSeen,
       rewindTipsShown,
+      moveSpeed,
     );
   }
 
   bool get musicOn => _musicOn;
   bool get sfxOn => _sfxOn;
   bool get endingSeen => _endingSeen;
+  MoveSpeed get moveSpeed => _moveSpeed;
 
   /// How many times the first-rewind tip has been shown (it stops at 2).
   int get rewindTipsShown => _rewindTipsShown;
@@ -131,6 +146,11 @@ class ProgressRepository extends ChangeNotifier {
     return _save();
   }
 
+  Future<void> setMoveSpeed(MoveSpeed value) {
+    _moveSpeed = value;
+    return _save();
+  }
+
   Future<void> markChapterIntroSeen(int chapter) {
     _seenChapters.add(chapter);
     return _save();
@@ -156,6 +176,7 @@ class ProgressRepository extends ChangeNotifier {
       'seenChapters': _seenChapters.toList()..sort(),
       'endingSeen': _endingSeen,
       'rewindTipsShown': _rewindTipsShown,
+      'moveSpeed': _moveSpeed.name,
     });
     await _prefs.setString(storageKey, json);
     notifyListeners();

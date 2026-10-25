@@ -1,4 +1,5 @@
 import 'package:echo_app/data/progress_repository.dart';
+import 'package:echo_app/game/game_clock.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -137,5 +138,22 @@ void main() {
     expect(repo.rewindTipsShown, 0);
     expect(repo.progressOf('1-01').stars, 2);
     expect(repo.musicOn, isFalse);
+  });
+
+  test('moveSpeed defaults to normal, persists, old data loads', () async {
+    var repo = await ProgressRepository.open();
+    expect(repo.moveSpeed, MoveSpeed.normal);
+    await repo.setMoveSpeed(MoveSpeed.fast);
+    repo = await ProgressRepository.open();
+    expect(repo.moveSpeed, MoveSpeed.fast);
+    SharedPreferences.setMockInitialValues({
+      key: '{"levels":{"1-01":{"stars":2}},"musicOn":false}',
+    });
+    repo = await ProgressRepository.open();
+    expect(repo.moveSpeed, MoveSpeed.normal);
+    expect(repo.progressOf('1-01').stars, 2);
+    SharedPreferences.setMockInitialValues({key: '{"moveSpeed":"warp"}'});
+    repo = await ProgressRepository.open();
+    expect(repo.moveSpeed, MoveSpeed.normal);
   });
 }
