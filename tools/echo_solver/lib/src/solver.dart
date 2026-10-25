@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:echo_core/echo_core.dart';
 
+part 'spark_proofs.dart';
+
 sealed class SolveResult {
   const SolveResult();
 }

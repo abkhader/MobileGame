@@ -8,7 +8,7 @@ import 'solver.dart';
 
 const _usage =
     'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N] '
-    '[--report]';
+    '[--report] [--sparks]';
 
 /// Allowed `runLimit` range (inclusive) per chapter.
 final _levelId = RegExp(r'^[1-3]-(0[1-9]|10)$');
@@ -19,12 +19,15 @@ const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4)};
 ///
 /// `--check` verifies every `*.json` level in the directory; `--write` fills
 /// in `bestScore` and `solution` from the solver. Output goes to [out]
-/// (default [stdout]). [reducedMaxNodes] is test-only: it overrides the node
-/// budget of the "needs every run" proof.
+/// (default [stdout]). `--sparks` adds the spark checks ([sparkFailure]);
+/// they are off by default until every level has its sparks.
+/// [reducedMaxNodes] and [sparkMaxNodes] are test-only: they override the
+/// node budget of the "needs every run" proof and of each spark proof.
 Future<int> runCli(
   List<String> args, {
   StringSink? out,
   int? reducedMaxNodes,
+  int? sparkMaxNodes,
 }) async {
   final sink = out ?? stdout;
   final options = _parseArgs(args);
@@ -45,7 +48,7 @@ Future<int> runCli(
   for (final file in files) {
     final name = _baseName(file);
     final watch = Stopwatch()..start();
-    final result = _process(file, options, reducedMaxNodes);
+    final result = _process(file, options, reducedMaxNodes, sparkMaxNodes);
     watch.stop();
     if (result.failure == null) {
       sink.writeln('$name: OK (best ${result.best})');
@@ -54,6 +57,7 @@ Future<int> runCli(
           '  runs ${result.runs}, best ${result.best}, nodes ${result.nodes}, '
           '${watch.elapsedMilliseconds} ms',
         );
+        if (options.sparks) sink.writeln('  sparks: ${result.sparks}');
       }
     } else {
       failed = true;
@@ -69,24 +73,33 @@ class _Options {
     required this.write,
     required this.maxNodes,
     required this.report,
+    required this.sparks,
   });
 
   final Directory dir;
   final bool write;
   final int? maxNodes;
   final bool report;
+  final bool sparks;
 }
 
 /// Outcome of processing one file: [failure] is null when every check passed.
 class _Outcome {
-  _Outcome.fail(this.failure) : best = 0, runs = 0, nodes = 0;
-  _Outcome.ok({required this.best, required this.runs, required this.nodes})
-    : failure = null;
+  _Outcome.fail(this.failure) : best = 0, runs = 0, nodes = 0, sparks = '';
+  _Outcome.ok({
+    required this.best,
+    required this.runs,
+    required this.nodes,
+    required this.sparks,
+  }) : failure = null;
 
   final String? failure;
   final int best;
   final int runs;
   final int nodes;
+
+  /// The `--report` spark list; empty without `--sparks`.
+  final String sparks;
 }
 
 _Options? _parseArgs(List<String> args) {
@@ -94,6 +107,7 @@ _Options? _parseArgs(List<String> args) {
   bool? write;
   int? maxNodes;
   var report = false;
+  var sparks = false;
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
     switch (arg) {
@@ -108,6 +122,9 @@ _Options? _parseArgs(List<String> args) {
       case '--report':
         if (report) return null;
         report = true;
+      case '--sparks':
+        if (sparks) return null;
+        sparks = true;
       default:
         if (arg.startsWith('--') || dir != null) return null;
         dir = arg;
@@ -116,12 +133,23 @@ _Options? _parseArgs(List<String> args) {
   if (dir == null || write == null) return null;
   final directory = Directory(dir);
   if (!directory.existsSync()) return null;
-  return _Options(directory, write: write, maxNodes: maxNodes, report: report);
+  return _Options(
+    directory,
+    write: write,
+    maxNodes: maxNodes,
+    report: report,
+    sparks: sparks,
+  );
 }
 
 String _baseName(File file) => file.uri.pathSegments.last;
 
-_Outcome _process(File file, _Options options, int? reducedMaxNodes) {
+_Outcome _process(
+  File file,
+  _Options options,
+  int? reducedMaxNodes,
+  int? sparkMaxNodes,
+) {
   final String text;
   try {
     text = file.readAsStringSync();
@@ -180,7 +208,21 @@ _Outcome _process(File file, _Options options, int? reducedMaxNodes) {
         reducedMaxNodes,
       );
       if (quality != null) return _Outcome.fail(quality);
-      return _Outcome.ok(best: bestScore, runs: level.runLimit, nodes: nodes);
+      final labels = <String>[];
+      if (options.sparks) {
+        final failure = sparkFailure(
+          level,
+          maxNodes: sparkMaxNodes ?? options.maxNodes,
+          labels: labels,
+        );
+        if (failure != null) return _Outcome.fail(failure);
+      }
+      return _Outcome.ok(
+        best: bestScore,
+        runs: level.runLimit,
+        nodes: nodes,
+        sparks: labels.join(', '),
+      );
   }
 }
 
@@ -221,5 +263,41 @@ String? _qualityFailure(
         break;
     }
   }
+  return null;
+}
+
+/// The spark checks: exactly 3 sparks, each on a floor tile and collectible
+/// in a winning play, and in chapters 2-3 at least one that needs an echo
+/// (no winning play collects it in run 1). Returns the first failure, or
+/// null after adding `(x,y) echo` or `(x,y) run1` per spark to [labels].
+/// [maxNodes] is the node budget of each spark proof.
+String? sparkFailure(Level level, {int? maxNodes, List<String>? labels}) {
+  final sparks = level.sparks;
+  if (sparks.length != 3) return 'level has ${sparks.length} sparks (need 3)';
+  String at(Position p) => '(${p.x},${p.y})';
+  for (final p in sparks) {
+    if (!level.inBounds(p) || level.tileAt(p).kind != TileKind.floor) {
+      return 'spark at ${at(p)} is not on floor';
+    }
+  }
+  final found = <String>[];
+  var echo = false;
+  for (final p in sparks) {
+    final proof = maxNodes == null
+        ? sparkProof(level, p)
+        : sparkProof(level, p, maxNodes: maxNodes);
+    if (proof.budgetExceeded) {
+      return 'cannot prove spark at ${at(p)} is collectible (budget exceeded)';
+    }
+    if (!proof.collectible) {
+      return 'spark at ${at(p)} cannot be collected in a winning play';
+    }
+    echo |= proof.echoNeeded;
+    found.add('${at(p)} ${proof.echoNeeded ? 'echo' : 'run1'}');
+  }
+  if (!echo && level.id.startsWith(RegExp('[23]-'))) {
+    return 'no spark needs an echo';
+  }
+  labels?.addAll(found);
   return null;
 }

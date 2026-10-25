@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:echo_core/echo_core.dart';
 import 'package:echo_solver/src/cli.dart';
 import 'package:test/test.dart';
 
 const _usage =
     'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N] '
-    '[--report]';
+    '[--report] [--sparks]';
 
 void main() {
   late Directory dir;
@@ -291,6 +292,157 @@ void main() {
     });
   });
 
+  group('spark checks (--sparks)', () {
+    // Run 1 (index 0) holds plate a so run 2 can pass door A. Sparks: (3,1)
+    // and (1,2) are open to run 1; (4,2) sits under door A, so only a run
+    // passing the door with an echo on the plate reaches it.
+    const good = ['########', '#Sa*A.E#', '#*##*###', '########'];
+    const noEcho = ['########', '#Sa*A.E#', '#*#*####', '########'];
+    const two = ['########', '#Sa*A.E#', '#*######', '########'];
+    const walled = ['########', '#Sa*A.E#', '#*######', '###*####'];
+
+    Future<(int, String)> writeThenCheck(List<String> extra) async {
+      final (wCode, wOut) = await run(['--write']);
+      expect(wCode, 0, reason: wOut);
+      return run(['--check', ...extra]);
+    }
+
+    test('without --sparks a level with no sparks still passes', () async {
+      put('1-03.json', level('1-03', ['#######', '#Sa.AE#', '#######'], 2));
+      final (code, out) = await writeThenCheck([]);
+      expect(code, 0);
+      expect(out, '1-03.json: OK (best 5)\n');
+    });
+
+    test(
+      'a good chapter-2 level passes and --report lists its sparks',
+      () async {
+        put('2-01.json', level('2-01', good, 2));
+        final (code, out) = await writeThenCheck(['--sparks', '--report']);
+        expect(code, 0, reason: out);
+        final lines = out.trimRight().split('\n');
+        expect(lines, hasLength(3));
+        expect(lines[0], '2-01.json: OK (best 6)');
+        expect(
+          lines[1],
+          matches(RegExp(r'^  runs 2, best 6, nodes \d+, \d+ ms$')),
+        );
+        expect(lines[2], '  sparks: (3,1) run1, (1,2) run1, (4,2) echo');
+      },
+    );
+
+    test('--report without --sparks prints no sparks line', () async {
+      put('2-01.json', level('2-01', good, 2));
+      final (code, out) = await writeThenCheck(['--report']);
+      expect(code, 0);
+      expect(out, isNot(contains('sparks')));
+    });
+
+    test('a level with 2 sparks fails', () async {
+      put('1-03.json', level('1-03', two, 2));
+      final (code, out) = await writeThenCheck(['--sparks']);
+      expect(code, 1);
+      expect(out, '1-03.json: FAIL level has 2 sparks (need 3)\n');
+    });
+
+    test('a level with no sparks fails', () async {
+      put('1-03.json', level('1-03', ['#######', '#Sa.AE#', '#######'], 2));
+      final (code, out) = await writeThenCheck(['--sparks']);
+      expect(code, 1);
+      expect(out, '1-03.json: FAIL level has 0 sparks (need 3)\n');
+    });
+
+    test('a spark that cannot be collected fails', () async {
+      put('1-03.json', level('1-03', walled, 2));
+      final (code, out) = await writeThenCheck(['--sparks']);
+      expect(code, 1);
+      expect(
+        out,
+        '1-03.json: FAIL spark at (3,3) cannot be collected in a winning '
+        'play\n',
+      );
+    });
+
+    test('a chapter-2 level with no echo spark fails', () async {
+      put('2-01.json', level('2-01', noEcho, 2));
+      final (code, out) = await writeThenCheck(['--sparks']);
+      expect(code, 1);
+      expect(out, '2-01.json: FAIL no spark needs an echo\n');
+    });
+
+    test('a chapter-1 level needs no echo spark', () async {
+      put('1-03.json', level('1-03', noEcho, 2));
+      final (code, out) = await writeThenCheck(['--sparks']);
+      expect(code, 0, reason: out);
+    });
+
+    test('--write runs the spark checks too', () async {
+      put('1-03.json', level('1-03', two, 2));
+      final (code, out) = await run(['--write', '--sparks']);
+      expect(code, 1);
+      expect(out, '1-03.json: FAIL level has 2 sparks (need 3)\n');
+    });
+
+    test('a spark proof over the budget fails', () async {
+      put('2-01.json', level('2-01', good, 2));
+      final (wCode, _) = await run(['--write']);
+      expect(wCode, 0);
+      final buffer = StringBuffer();
+      final code = await runCli(
+        [dir.path, '--check', '--sparks'],
+        out: buffer,
+        sparkMaxNodes: 1,
+      );
+      expect(code, 1);
+      expect(
+        buffer.toString(),
+        '2-01.json: FAIL cannot prove spark at (3,1) is collectible '
+        '(budget exceeded)\n',
+      );
+    });
+
+    test('a spark off the floor fails', () {
+      final parsed = LevelLoader.fromMap({
+        'id': '1-03',
+        'name': 'T',
+        'runLimit': 2,
+        'grid': good,
+      });
+      Level withSparks(List<Position> sparks) => Level(
+        id: parsed.id,
+        name: parsed.name,
+        runLimit: parsed.runLimit,
+        grid: [
+          for (var y = 0; y < parsed.height; y++)
+            [
+              for (var x = 0; x < parsed.width; x++)
+                parsed.tileAt(Position(x, y)),
+            ],
+        ],
+        start: parsed.start,
+        exit: parsed.exit,
+        plates: parsed.plates,
+        doors: parsed.doors,
+        sparks: sparks,
+      );
+      // A plate, a door, the start, the exit and a wall.
+      for (final p in const [
+        Position(2, 1),
+        Position(4, 1),
+        Position(1, 1),
+        Position(6, 1),
+        Position(0, 0),
+      ]) {
+        expect(
+          sparkFailure(
+            withSparks([const Position(3, 1), const Position(1, 2), p]),
+          ),
+          'spark at (${p.x},${p.y}) is not on floor',
+        );
+      }
+    });
+  });
+
   group('bad arguments exit 64 with the usage line', () {
     Future<void> expectUsage(List<String> args) async {
       final out = StringBuffer();
@@ -326,5 +478,9 @@ void main() {
       () => expectUsage([dir.path, '--check', '--report', '--report']),
     );
     test('unknown flag', () => expectUsage([dir.path, '--check', '--nope']));
+    test(
+      'repeated --sparks',
+      () => expectUsage([dir.path, '--check', '--sparks', '--sparks']),
+    );
   });
 }
