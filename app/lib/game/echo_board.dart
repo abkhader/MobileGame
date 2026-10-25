@@ -3,11 +3,14 @@ import 'dart:ui';
 
 import 'package:echo_core/echo_core.dart';
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart';
 
 import '../art/pip.dart';
 import 'board_effects.dart';
 import 'board_layout.dart';
+import 'board_static_layer.dart';
 import 'flow_controller.dart';
+import 'game_clock.dart';
 import 'game_controller.dart';
 import 'palette.dart' as palette;
 
@@ -18,11 +21,17 @@ import 'palette.dart' as palette;
 /// engine pauses, so a still board costs no frames. Any input or game change
 /// wakes it.
 class EchoBoard extends FlameGame {
-  EchoBoard(this.flow, {bool reduceEffects = false})
-    : _reduceEffects = reduceEffects,
-      _pip = PipMotion(reduceEffects: reduceEffects);
+  EchoBoard(
+    this.flow, {
+    bool reduceEffects = false,
+    Duration Function()? beatLength,
+  }) : _reduceEffects = reduceEffects,
+       _beatLength = beatLength ?? (() => MoveSpeed.normal.beat),
+       _pip = PipMotion(reduceEffects: reduceEffects),
+       _layer = BoardStaticLayer(flow.game.level);
 
   final FlowController flow;
+  final Duration Function() _beatLength;
 
   GameController get controller => flow.game;
 
@@ -37,52 +46,52 @@ class EchoBoard extends FlameGame {
 
   bool _reduceEffects;
 
-  /// No trails, shimmer, lean or squash. Motion and gliding stay.
+  /// No trails, shimmer, flicker, lean or squash; the battery warning and the
+  /// win light hold steady. Motion and gliding stay.
   bool get reduceEffects => _reduceEffects;
   set reduceEffects(bool value) {
     if (value == _reduceEffects) return;
     _reduceEffects = value;
     _pip.reduceEffects = value;
-    for (final t in _ghostTrails) {
-      t.clear();
-    }
+    _fx.clearTrails();
     wake();
   }
 
+  static const _echoOpacity = 0.55;
   static const _batteryLowFraction = 0.2;
-  static const _batteryFlashPeriod = 0.5;
 
-  // Paints are reused every frame: render allocates no paints or paths.
-  final _staticImagePaint = Paint()..filterQuality = FilterQuality.medium;
+  // Paints, colours and the trail path are reused: render allocates none.
   final _exitGlowPaint = Paint()..style = PaintingStyle.stroke;
   final _platePaint = Paint();
   final _ripplePaint = Paint()..style = PaintingStyle.stroke;
   final _doorPaint = Paint();
   final _hintPaint = Paint()..color = palette.player.withValues(alpha: 0.4);
-  final _trailPaint = Paint()..strokeCap = StrokeCap.round;
+  final _trailPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round;
+  final _trailPath = Path();
   final _shimmerPaint = Paint()..style = PaintingStyle.stroke;
   final _ringTrackPaint = Paint()
     ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round;
+    ..strokeCap = StrokeCap.round
+    ..color = palette.gridLine;
   final _ringPaint = Paint()
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
   final _flashPaint = Paint();
+  static final _echoRamps = [for (final c in palette.ghostColors) AlphaRamp(c)];
+  static final _playerRamp = AlphaRamp(palette.player);
+  static final _exitRamp = AlphaRamp(palette.exit);
+  static final _plateRamp = AlphaRamp(palette.platePressed);
 
-  // Effects.
+  final BoardStaticLayer _layer;
+  double _cell = -1;
+
   final PipMotion _pip;
-  final _nudge = BumpNudge();
-  final _bob = IdleBob();
-  final _exitPulse = ExitPulse();
-  final _winFlash = WinFlash();
-  final Map<Position, DoorSlide> _doors = {};
-  final Map<Position, PlateRipple> _ripples = {};
-  final List<TrailBuffer> _ghostTrails = [];
-  final List<Shimmer> _shimmers = [];
+  final _fx = BoardEffects();
   Set<Position> _pressed = const {};
-  double _flicker = 0;
-  double _batteryPhase = 0;
-  bool _wasFrozen = true;
+  bool _wasSettled = true;
   int _run = 0;
 
   // Interpolated positions in tiles, refreshed before each update and draw.
@@ -90,20 +99,35 @@ class EchoBoard extends FlameGame {
   final List<Offset> _ghostTiles = [];
   double _ticksUsed = 0;
 
-  // Layout and the cached static layer (floor, walls, grid, exit frame).
-  BoardLayout? _layout;
-  Image? _static;
-  Rect _staticSrc = Rect.zero;
-  Rect _staticDst = Rect.zero;
-  final List<Rect> _exitRects = [];
-  final List<RRect> _plateRects = [];
-  final List<Position> _platePositions = [];
-  final List<Position> _doorPositions = [];
-
   /// Starts the engine again if it was paused. Safe to call often.
   void wake() {
     if (paused) resumeEngine();
   }
+
+  @visibleForTesting
+  int get staticBuilds => _layer.builds;
+
+  /// Where Pip is drawn, in tiles (before nudge and bob).
+  @visibleForTesting
+  Offset get pipTileForTesting => _pipTile;
+
+  /// Where each echo is drawn, in tiles.
+  @visibleForTesting
+  List<Offset> get ghostTilesForTesting => List.unmodifiable(_ghostTiles);
+
+  /// The push nudge, in logical px.
+  @visibleForTesting
+  Offset get nudgeOffsetForTesting => _fx.nudge.offset;
+
+  @visibleForTesting
+  double ghostOpacityForTesting(int i) => _ghostOpacity(i);
+
+  /// How far the door at [p] is drawn open, 0 to 1.
+  @visibleForTesting
+  double doorOpenForTesting(Position p) => _fx.doors[p]?.value ?? 0;
+
+  @visibleForTesting
+  bool get winFlashActiveForTesting => _fx.winFlash.active;
 
   @override
   void onMount() {
@@ -119,15 +143,8 @@ class EchoBoard extends FlameGame {
     controller.removeListener(_onGameChanged);
     flow.removeListener(_onBeat);
     flow.bumps.removeListener(_onBump);
-    _static?.dispose();
-    _static = null;
+    _layer.dispose();
     super.onRemove();
-  }
-
-  @override
-  void onGameResize(Vector2 size) {
-    super.onGameResize(size);
-    _invalidateLayout();
   }
 
   // --- Reacting to the game ---------------------------------------------
@@ -135,69 +152,91 @@ class EchoBoard extends FlameGame {
   void _resetWorld() {
     final state = controller.state;
     _run = state.runIndex;
-    _doors.clear();
-    for (final p in _doorPositionsOf(controller.level)) {
-      _doors[p] = DoorSlide(open: state.openDoors.contains(p));
+    _fx.doors.clear();
+    final level = controller.level;
+    for (var y = 0; y < level.height; y++) {
+      for (var x = 0; x < level.width; x++) {
+        final p = Position(x, y);
+        if (level.tileAt(p).kind == TileKind.door) {
+          _fx.doors[p] = DoorSlide(open: state.openDoors.contains(p));
+        }
+      }
     }
-    _ripples.clear();
+    _fx.ripples.clear();
     _pressed = _pressedPlates(state);
-    _ghostTrails.clear();
-    _shimmers.clear();
-    for (var i = 0; i < state.ghostPositions.length; i++) {
-      _ghostTrails.add(TrailBuffer());
-      _shimmers.add(Shimmer());
-    }
+    _fx.resetEchoes(state.ghostPositions.length);
     _pip.reset();
-    _winFlash.stop();
+    _fx.winFlash.stop();
   }
 
   void _onGameChanged() {
     final state = controller.state;
-    for (final entry in _doors.entries) {
+    final event = controller.lastEvent;
+    final from = _sameRunFrom;
+    final count = state.ghostPositions.length;
+    final runChanged =
+        state.runIndex != _run || count != _fx.ghostTrails.length;
+    // Rewind steps are the only other event-less change; anything else
+    // event-less is a restart.
+    final rewindStep =
+        event == GameEvent.none && from != null && from.tick == state.tick + 1;
+    final reset = runChanged || (event == GameEvent.none && !rewindStep);
+
+    for (final entry in _fx.doors.entries) {
       entry.value.target = state.openDoors.contains(entry.key);
+      if (reset) entry.value.snap();
     }
     final pressed = _pressedPlates(state);
-    for (final p in pressed) {
-      if (!_pressed.contains(p)) {
-        (_ripples[p] ??= PlateRipple()).start();
+    if (!reset) {
+      for (final p in pressed) {
+        if (!_pressed.contains(p)) {
+          (_fx.ripples[p] ??= PlateRipple()).start();
+        }
       }
     }
     _pressed = pressed;
 
-    final count = state.ghostPositions.length;
-    if (state.runIndex != _run || count != _ghostTrails.length) {
-      final before = state.runIndex > _run ? _ghostTrails.length : count;
-      _run = state.runIndex;
-      _ghostTrails
-        ..clear()
-        ..addAll([for (var i = 0; i < count; i++) TrailBuffer()]);
-      _shimmers
-        ..clear()
-        ..addAll([for (var i = 0; i < count; i++) Shimmer()]);
+    if (runChanged) {
       // Echoes new to this run shimmer in.
-      if (!_reduceEffects) {
-        for (var i = before; i < count; i++) {
-          _shimmers[i].start();
-        }
-      }
-      _pip.reset();
+      final before = state.runIndex > _run ? _fx.ghostTrails.length : count;
+      _run = state.runIndex;
+      _fx.resetEchoes(count, shimmerFrom: _reduceEffects ? count : before);
     }
-    if (controller.lastEvent == GameEvent.won) _winFlash.start();
+    if (reset) {
+      _pip.reset();
+      _fx.winFlash.stop();
+      _fx.finish.stop();
+    }
+
+    // The clock stops in the beat that ends the run: finish that glide here.
+    if ((event == GameEvent.won || event == GameEvent.lost) && from != null) {
+      _fx.finish.startFor(
+        _beatLength().inMicroseconds / Duration.microsecondsPerSecond,
+      );
+    }
+    if (event == GameEvent.won) _fx.winFlash.start();
     wake();
   }
 
   /// Each beat: Pip's direction drives the lean, stretch and squash.
   void _onBeat() {
+    // A beat can start and end between two updates; it still needs its stop.
+    _wasSettled = false;
     final from = _sameRunFrom;
-    final to = controller.state.player;
-    var dir = Offset.zero;
-    if (from != null && from.player != to) {
-      dir = Offset(
-        (to.x - from.player.x).sign.toDouble(),
-        (to.y - from.player.y).sign.toDouble(),
-      );
+    final state = controller.state;
+    if (from != null && from.tick > state.tick) {
+      _pip.onRewindBeat();
+    } else {
+      final to = state.player;
+      var dir = Offset.zero;
+      if (from != null && from.player != to) {
+        dir = Offset(
+          (to.x - from.player.x).sign.toDouble(),
+          (to.y - from.player.y).sign.toDouble(),
+        );
+      }
+      _pip.onBeat(dir);
     }
-    _pip.onBeat(dir);
     wake();
   }
 
@@ -209,7 +248,7 @@ class EchoBoard extends FlameGame {
       Move.right => const Offset(1, 0),
       Move.wait || null => Offset.zero,
     };
-    _nudge.start(dir);
+    _fx.nudge.start(dir);
     wake();
   }
 
@@ -235,67 +274,29 @@ class EchoBoard extends FlameGame {
   void update(double dt) {
     super.update(dt);
     flow.advance(dt);
+    _fx.finish.update(dt);
     _syncPositions();
 
     final frozen = flow.frozen;
-    if (frozen && !_wasFrozen) _pip.onStop();
-    _wasFrozen = frozen;
+    final settled = frozen && !_fx.finish.active;
+    if (settled && !_wasSettled) _pip.onStop();
+    _wasSettled = settled;
 
     _pip.update(dt, _pipTile);
-    _nudge.update(dt);
-    _winFlash.update(dt);
-    for (final d in _doors.values) {
-      d.update(dt);
-    }
-    for (final r in _ripples.values) {
-      r.update(dt);
-    }
-    for (var i = 0; i < _ghostTrails.length && i < _ghostTiles.length; i++) {
-      final trail = _ghostTrails[i];
-      final at = _ghostTiles[i];
-      if (_reduceEffects) {
-        trail.clear();
-      } else if (trail.points.isNotEmpty && trail.points.last == at) {
-        // Standing still (or frozen): the trail fades behind it.
-        trail.shrink(dt * 3);
-      } else {
-        trail.add(at);
-      }
-      _shimmers[i].update(dt);
-    }
-    if (!frozen) {
-      // Frozen means frozen mid-pose: these only run while time flows.
-      _bob.update(dt);
-      _exitPulse.update(dt);
-      _flicker += dt;
-      _batteryPhase = (_batteryPhase + dt) % _batteryFlashPeriod;
-    }
+    _fx.update(
+      dt,
+      flowing: !frozen,
+      ghostTiles: _ghostTiles,
+      reduceEffects: _reduceEffects,
+    );
 
-    if (frozen && !_busy) pauseEngine();
-  }
-
-  /// A short effect is still playing out.
-  bool get _busy {
-    if (_pip.busy || _nudge.active || _winFlash.active) return true;
-    for (final d in _doors.values) {
-      if (d.active) return true;
-    }
-    for (final r in _ripples.values) {
-      if (r.active) return true;
-    }
-    for (final s in _shimmers) {
-      if (s.active) return true;
-    }
-    for (final t in _ghostTrails) {
-      if (!t.isEmpty) return true;
-    }
-    return false;
+    if (frozen && !_pip.busy && !_fx.busy) pauseEngine();
   }
 
   void _syncPositions() {
     final state = controller.state;
     final from = _sameRunFrom;
-    final t = flow.beatProgress;
+    final t = _fx.finish.active ? _fx.finish.progress : flow.beatProgress;
     _pipTile = _tileLerp(from?.player ?? state.player, state.player, t);
     final ghosts = state.ghostPositions;
     final fromGhosts = from?.ghostPositions;
@@ -313,198 +314,50 @@ class EchoBoard extends FlameGame {
   static Offset _tileLerp(Position a, Position b, double t) =>
       Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
 
-  // --- Static layer -------------------------------------------------------
-
-  void _invalidateLayout() {
-    _layout = null;
-    _static?.dispose();
-    _static = null;
+  double _ghostOpacity(int i) {
+    if (_reduceEffects) return _echoOpacity;
+    return _echoOpacity *
+        (0.92 + 0.08 * math.sin(_fx.flicker * 23 + i * 2.1).abs());
   }
 
-  BoardLayout? _ensureLayout() {
-    final cached = _layout;
-    if (cached != null) return cached;
-    final level = controller.level;
-    final layout = BoardLayout(
-      canvas: Size(size.x, size.y),
-      columns: level.width,
-      rows: level.height,
-    );
-    if (layout.cellSize <= 0) return null;
-    _layout = layout;
-    final cell = layout.cellSize;
+  // --- Drawing ------------------------------------------------------------
 
-    _exitRects.clear();
-    _plateRects.clear();
-    _platePositions.clear();
-    _doorPositions.clear();
-    for (var y = 0; y < level.height; y++) {
-      for (var x = 0; x < level.width; x++) {
-        final p = Position(x, y);
-        final rect = layout.rectOf(p);
-        switch (level.tileAt(p).kind) {
-          case TileKind.exit:
-            _exitRects.add(rect.deflate(cell * 0.15));
-          case TileKind.plate:
-            _platePositions.add(p);
-            _plateRects.add(
-              RRect.fromRectAndRadius(
-                rect.deflate(cell * 0.18),
-                Radius.circular(cell * 0.12),
-              ),
-            );
-          case TileKind.door:
-            _doorPositions.add(p);
-          case TileKind.wall || TileKind.floor || TileKind.start:
-            break;
-        }
-      }
-    }
+  /// Sizes the paints that scale with the cell; only when the cell changes.
+  void _sizePaints(double cell) {
+    if (cell == _cell) return;
+    _cell = cell;
     _exitGlowPaint
       ..strokeWidth = cell * 0.08
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.08);
     _ripplePaint.strokeWidth = math.max(1, cell * 0.04);
     _trailPaint.strokeWidth = cell * 0.22;
     _shimmerPaint.strokeWidth = math.max(1, cell * 0.05);
-    _ringTrackPaint
-      ..strokeWidth = math.max(1.5, cell * 0.035)
-      ..color = palette.gridLine;
+    _ringTrackPaint.strokeWidth = math.max(1.5, cell * 0.035);
     _ringPaint.strokeWidth = math.max(1.5, cell * 0.035);
-
-    _recordStatic(layout, level);
-    return layout;
   }
-
-  /// Floor, grid, walls and exit frames: drawn once into an image at the
-  /// screen's pixel density, then blitted every frame.
-  void _recordStatic(BoardLayout layout, Level level) {
-    final w = size.x;
-    final h = size.y;
-    final dpr =
-        PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 1.0;
-    final pw = math.max(1, (w * dpr).ceil());
-    final ph = math.max(1, (h * dpr).ceil());
-    final recorder = PictureRecorder();
-    final canvas = Canvas(recorder)..scale(dpr);
-    final cell = layout.cellSize;
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h),
-      Paint()..color = palette.background,
-    );
-    final grid = Paint()
-      ..color = palette.gridLine
-      ..strokeWidth = 1;
-    final o = layout.origin;
-    final right = o.dx + cell * level.width;
-    final bottom = o.dy + cell * level.height;
-    for (var x = 0; x <= level.width; x++) {
-      final dx = o.dx + x * cell;
-      canvas.drawLine(Offset(dx, o.dy), Offset(dx, bottom), grid);
-    }
-    for (var y = 0; y <= level.height; y++) {
-      final dy = o.dy + y * cell;
-      canvas.drawLine(Offset(o.dx, dy), Offset(right, dy), grid);
-    }
-    final wall = Paint()..color = palette.wall;
-    final exit = Paint()
-      ..color = palette.exit
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = cell * 0.06;
-    for (var y = 0; y < level.height; y++) {
-      for (var x = 0; x < level.width; x++) {
-        final p = Position(x, y);
-        switch (level.tileAt(p).kind) {
-          case TileKind.wall:
-            canvas.drawRect(layout.rectOf(p), wall);
-          case TileKind.exit:
-            canvas.drawRect(layout.rectOf(p).deflate(cell * 0.15), exit);
-          case TileKind.plate ||
-              TileKind.door ||
-              TileKind.floor ||
-              TileKind.start:
-            break;
-        }
-      }
-    }
-    final picture = recorder.endRecording();
-    _static?.dispose();
-    _static = picture.toImageSync(pw, ph);
-    picture.dispose();
-    _staticSrc = Rect.fromLTWH(0, 0, pw.toDouble(), ph.toDouble());
-    _staticDst = Rect.fromLTWH(0, 0, pw / dpr, ph / dpr);
-  }
-
-  static Iterable<Position> _doorPositionsOf(Level level) sync* {
-    for (var y = 0; y < level.height; y++) {
-      for (var x = 0; x < level.width; x++) {
-        final p = Position(x, y);
-        if (level.tileAt(p).kind == TileKind.door) yield p;
-      }
-    }
-  }
-
-  // --- Drawing ------------------------------------------------------------
 
   @override
   void render(Canvas canvas) {
     super.render(canvas);
-    final layout = _ensureLayout();
-    final image = _static;
-    if (layout == null || image == null) return;
+    final dpr =
+        PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 1.0;
+    final layout = _layer.ensure(size.x, size.y, dpr);
+    if (layout == null) return;
     _syncPositions();
     final cell = layout.cellSize;
+    _sizePaints(cell);
     final fx = !_reduceEffects;
 
-    canvas.drawImageRect(image, _staticSrc, _staticDst, _staticImagePaint);
+    _layer.draw(canvas);
 
     // Exit glow pulses over the cached frame.
-    final pulse = _exitPulse.value;
-    _exitGlowPaint.color = palette.exit.withValues(alpha: 0.15 + 0.4 * pulse);
-    for (final r in _exitRects) {
+    _exitGlowPaint.color = _exitRamp.at(0.15 + 0.4 * _fx.exitPulse.value);
+    for (final r in _layer.exitRects) {
       canvas.drawRect(r, _exitGlowPaint);
     }
 
-    // Plates, with a ripple when pressed.
-    for (var i = 0; i < _plateRects.length; i++) {
-      final p = _platePositions[i];
-      final rrect = _plateRects[i];
-      _platePaint.color = _pressed.contains(p)
-          ? palette.platePressed
-          : palette.plateIdle;
-      canvas.drawRRect(rrect, _platePaint);
-      final ripple = _ripples[p];
-      if (ripple != null && ripple.active) {
-        final k = ripple.progress;
-        _ripplePaint.color = palette.platePressed.withValues(
-          alpha: 0.8 * (1 - k),
-        );
-        canvas.drawCircle(rrect.center, cell * (0.25 + 0.4 * k), _ripplePaint);
-      }
-    }
-
-    // Doors slide: the closed bar shrinks toward its ends as it opens.
-    for (final p in _doorPositions) {
-      final open = _doors[p]?.value ?? 0;
-      final rect = layout.rectOf(p);
-      final w = cell * 0.3;
-      _doorPaint.color = palette.doorOpen;
-      canvas.drawRect(
-        Rect.fromCenter(center: rect.center, width: w, height: cell),
-        _doorPaint,
-      );
-      if (open < 1) {
-        final half = cell / 2 * (1 - open);
-        _doorPaint.color = palette.doorClosed;
-        final left = rect.center.dx - w / 2;
-        canvas
-          ..drawRect(Rect.fromLTWH(left, rect.top, w, half), _doorPaint)
-          ..drawRect(
-            Rect.fromLTWH(left, rect.bottom - half, w, half),
-            _doorPaint,
-          );
-      }
-    }
+    _drawPlates(canvas, cell);
+    _drawDoors(canvas);
 
     final hint = _hintPath;
     if (hint != null) {
@@ -515,28 +368,27 @@ class EchoBoard extends FlameGame {
 
     // Echoes: trail, translucent flickering body, shimmer on arrival.
     for (var i = 0; i < _ghostTiles.length; i++) {
+      final ramp = _echoRamps[i % _echoRamps.length];
       final color = palette.ghostColors[i % palette.ghostColors.length];
-      if (fx && i < _ghostTrails.length) {
-        _drawTrail(canvas, layout, _ghostTrails[i], color, 0.35);
+      if (fx && i < _fx.ghostTrails.length) {
+        _drawTrail(canvas, layout, _fx.ghostTrails[i], ramp, 0.35);
       }
       final center = _px(layout, _ghostTiles[i]);
-      var opacity =
-          0.55 * (0.92 + 0.08 * math.sin(_flicker * 23 + i * 2.1).abs());
-      final shimmer = i < _shimmers.length ? _shimmers[i] : null;
+      var opacity = _ghostOpacity(i);
+      final shimmer = i < _fx.shimmers.length ? _fx.shimmers[i] : null;
       if (fx && shimmer != null && shimmer.active) {
         final k = shimmer.progress;
         opacity *= k;
-        _shimmerPaint.color = color.withValues(alpha: 0.9 * (1 - k));
+        _shimmerPaint.color = ramp.at(0.9 * (1 - k));
         canvas.drawCircle(center, cell * (0.3 + 0.35 * k), _shimmerPaint);
       }
       paintPip(canvas, center, cell * 0.3, color, opacity: opacity);
     }
 
-    // Pip.
-    if (fx) _drawTrail(canvas, layout, _pip.trail, palette.player, 0.45);
-    // The bob is for standing still; a glide carries its own motion.
-    final bob = _pip.moving ? 0.0 : _bob.offset;
-    final pip = _px(layout, _pipTile) + _nudge.offset + Offset(0, bob);
+    // Pip. The bob is for standing still; a glide carries its own motion.
+    if (fx) _drawTrail(canvas, layout, _pip.trail, _playerRamp, 0.45);
+    final bob = _pip.moving ? 0.0 : _fx.bob.offset;
+    final pip = _px(layout, _pipTile) + _fx.nudge.offset + Offset(0, bob);
     paintPip(
       canvas,
       pip,
@@ -548,11 +400,56 @@ class EchoBoard extends FlameGame {
     );
     _drawBattery(canvas, pip, cell);
 
-    if (_winFlash.active) {
-      _flashPaint.color = palette.exit.withValues(
-        alpha: 0.7 * (1 - _winFlash.progress),
-      );
-      canvas.drawRect(_staticDst, _flashPaint);
+    final light = _fx.winLight(reduceEffects: _reduceEffects);
+    if (light > 0) {
+      _flashPaint.color = _exitRamp.at(light);
+      canvas.drawRect(_layer.bounds, _flashPaint);
+    }
+  }
+
+  void _drawPlates(Canvas canvas, double cell) {
+    final plates = _layer.platePositions;
+    for (var i = 0; i < plates.length; i++) {
+      final p = plates[i];
+      _platePaint.color = _pressed.contains(p)
+          ? palette.platePressed
+          : palette.plateIdle;
+      canvas.drawRRect(_layer.plateRects[i], _platePaint);
+      final ripple = _fx.ripples[p];
+      if (ripple != null && ripple.active) {
+        final k = ripple.progress;
+        _ripplePaint.color = _plateRamp.at(0.8 * (1 - k));
+        canvas.drawCircle(
+          _layer.plateCenters[i],
+          cell * (0.25 + 0.4 * k),
+          _ripplePaint,
+        );
+      }
+    }
+  }
+
+  /// Doors slide: the closed bar's halves shrink toward its ends.
+  void _drawDoors(Canvas canvas) {
+    final doors = _layer.doorPositions;
+    for (var i = 0; i < doors.length; i++) {
+      final open = _fx.doors[doors[i]]?.value ?? 0;
+      _doorPaint.color = palette.doorOpen;
+      canvas.drawRect(_layer.doorRects[i], _doorPaint);
+      if (open >= 1) continue;
+      _doorPaint.color = palette.doorClosed;
+      final top = _layer.doorTops[i];
+      final bottom = _layer.doorBottoms[i];
+      canvas
+        ..save()
+        ..translate(top.dx, top.dy)
+        ..scale(1, 1 - open)
+        ..drawRect(_layer.doorHalfDown, _doorPaint)
+        ..restore()
+        ..save()
+        ..translate(bottom.dx, bottom.dy)
+        ..scale(1, 1 - open)
+        ..drawRect(_layer.doorHalfUp, _doorPaint)
+        ..restore();
     }
   }
 
@@ -562,45 +459,56 @@ class EchoBoard extends FlameGame {
     return Offset(o.dx + (tile.dx + 0.5) * c, o.dy + (tile.dy + 0.5) * c);
   }
 
+  /// One smooth stroke along the trail, fading as it shortens.
   void _drawTrail(
     Canvas canvas,
     BoardLayout layout,
     TrailBuffer trail,
-    Color color,
+    AlphaRamp ramp,
     double alpha,
   ) {
     final points = trail.points;
     if (trail.isEmpty || points.length < 2) return;
-    final n = points.length - 1;
-    var prev = _px(layout, points[0]);
-    for (var j = 1; j <= n; j++) {
-      final next = _px(layout, points[j]);
-      // Older segments fade out.
-      _trailPaint.color = color.withValues(alpha: alpha * j / n);
-      canvas.drawLine(prev, next, _trailPaint);
-      prev = next;
+    final o = layout.origin;
+    final c = layout.cellSize;
+    _trailPath.reset();
+    for (var j = 0; j < points.length; j++) {
+      final x = o.dx + (points[j].dx + 0.5) * c;
+      final y = o.dy + (points[j].dy + 0.5) * c;
+      if (j == 0) {
+        _trailPath.moveTo(x, y);
+      } else {
+        _trailPath.lineTo(x, y);
+      }
     }
+    _trailPaint.color = ramp.at(alpha * trail.length / trail.maxLength);
+    canvas.drawPath(_trailPath, _trailPaint);
   }
 
-  /// Moves left as a ring above Pip; it flashes red under 20 %.
+  /// Moves left as a ring above Pip; under 20 % it turns red and flashes
+  /// (steady red with reduced effects).
   void _drawBattery(Canvas canvas, Offset pip, double cell) {
     const max = Rules.maxTicksPerRun;
     final left = ((max - _ticksUsed) / max).clamp(0.0, 1.0);
-    final center = pip.translate(0, -cell * 0.62);
-    final radius = cell * 0.09;
-    canvas.drawCircle(center, radius, _ringTrackPaint);
     final low = left < _batteryLowFraction;
-    final flashOn = _batteryPhase < _batteryFlashPeriod / 2;
-    _ringPaint.color = low
-        ? (flashOn ? palette.batteryLow : palette.batteryLowDim)
-        : palette.platePressed;
-    if (left <= 0) return;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -math.pi / 2,
-      2 * math.pi * left,
-      false,
-      _ringPaint,
-    );
+    _ringPaint.color = !low
+        ? palette.platePressed
+        : _fx.batteryRedLit(reduceEffects: _reduceEffects)
+        ? palette.batteryLow
+        : palette.batteryLowDim;
+    canvas
+      ..save()
+      ..translate(pip.dx, pip.dy - cell * 0.62)
+      ..drawOval(_layer.ringRect, _ringTrackPaint);
+    if (left > 0) {
+      canvas.drawArc(
+        _layer.ringRect,
+        -math.pi / 2,
+        2 * math.pi * left,
+        false,
+        _ringPaint,
+      );
+    }
+    canvas.restore();
   }
 }

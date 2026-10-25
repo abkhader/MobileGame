@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../game/palette.dart' as palette;
@@ -23,15 +24,29 @@ MaskFilter _blur(double sigma) {
 }
 
 // Body gradients in local space (Pip centred on the origin), keyed by colour
-// and opacity. Only a handful are live at once; reset when the radius changes.
-final Map<(int, double), Shader> _bodyShaders = {};
+// and opacity. Opacity is rounded to 1/32 for the cache, so a flickering or
+// shimmering echo reuses a few shaders instead of making one per frame.
+// Reset when the radius changes.
+const _alphaSteps = 32;
+final Map<int, Shader> _bodyShaders = {};
 double _shaderRadius = -1;
-Shader _bodyShader(Color color, double r, double a) {
-  if (r != _shaderRadius || _bodyShaders.length > 16) {
+
+/// How many body shaders were built; for tests.
+@visibleForTesting
+int pipShaderBuilds = 0;
+
+Shader _bodyShader(Color color, double r, double opacity) {
+  if (r != _shaderRadius || _bodyShaders.length > 48) {
     _bodyShaders.clear();
     _shaderRadius = r;
   }
-  return _bodyShaders[(color.toARGB32(), a)] ??= RadialGradient(
+  final step = (opacity * _alphaSteps).round();
+  final key = color.toARGB32() * (_alphaSteps + 1) + step;
+  final cached = _bodyShaders[key];
+  if (cached != null) return cached;
+  pipShaderBuilds++;
+  final a = step / _alphaSteps;
+  return _bodyShaders[key] = RadialGradient(
     center: const Alignment(-0.3, -0.35),
     radius: 1.1,
     colors: [
@@ -78,9 +93,6 @@ void paintPip(
   // Details that turn to mush below this size are left out.
   final detailed = r >= 8;
 
-  Color fade(Color c, [double alpha = 1]) =>
-      c.withValues(alpha: c.a * alpha * a);
-
   canvas.save();
   canvas.translate(center.dx, center.dy);
   if (lean != 0) canvas.rotate(lean);
@@ -101,7 +113,7 @@ void paintPip(
     Offset.zero,
     r * 1.35,
     _haloPaint
-      ..color = fade(color, 0.35)
+      ..color = _fade(color, a, 0.35)
       ..maskFilter = _blur(r * 0.45),
   );
 
@@ -113,7 +125,7 @@ void paintPip(
       base,
       tip,
       _antennaPaint
-        ..color = fade(color, 0.85)
+        ..color = _fade(color, a, 0.85)
         ..strokeWidth = r * 0.09,
     );
     final spark = palette.ghostColors[2];
@@ -121,10 +133,10 @@ void paintPip(
       tip,
       r * 0.26,
       _sparkGlowPaint
-        ..color = fade(spark, 0.6)
+        ..color = _fade(spark, a, 0.6)
         ..maskFilter = _blur(r * 0.12),
     );
-    canvas.drawCircle(tip, r * 0.12, _sparkPaint..color = fade(spark));
+    canvas.drawCircle(tip, r * 0.12, _sparkPaint..color = _fade(spark, a));
   }
 
   // Body: bright core fading to the outer colour.
@@ -145,19 +157,19 @@ void paintPip(
       eyeCenter - Offset(eyeW / 2, 0),
       eyeCenter + Offset(eyeW / 2, 0),
       _eyeLinePaint
-        ..color = fade(ink)
+        ..color = _fade(ink, a)
         ..strokeWidth = math.max(1, r * 0.12),
     );
   } else {
     canvas.drawOval(
       Rect.fromCenter(center: eyeCenter, width: eyeW, height: eyeH),
-      _eyePaint..color = fade(ink),
+      _eyePaint..color = _fade(ink, a),
     );
     // A catch-light makes the eye read as alive, even when tiny.
     canvas.drawCircle(
       eyeCenter + Offset(eyeW * 0.18, -eyeH * 0.18),
       math.max(0.8, r * 0.13 * math.min(1, eye * 1.5)),
-      _catchPaint..color = fade(const Color(0xFFFFFFFF), 0.95),
+      _catchPaint..color = _fade(const Color(0xFFFFFFFF), a, 0.95),
     );
   }
 
@@ -169,9 +181,13 @@ void paintPip(
         width: r * 0.32,
         height: r * 0.2,
       ),
-      _glossPaint..color = fade(const Color(0xFFFFFFFF), 0.55),
+      _glossPaint..color = _fade(const Color(0xFFFFFFFF), a, 0.55),
     );
   }
 
   canvas.restore();
 }
+
+/// [c] at [alpha] of its own opacity, times the bot's opacity [a].
+Color _fade(Color c, double a, [double alpha = 1]) =>
+    c.withValues(alpha: c.a * alpha * a);

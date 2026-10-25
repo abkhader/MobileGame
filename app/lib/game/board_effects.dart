@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:echo_core/echo_core.dart';
+
 /// The board's short effects as pure, time-driven state. Each is advanced by
 /// `update(dt)` (seconds) from the board's game loop and read while drawing,
 /// so the math is testable without running Flame. Positions on the board are
@@ -10,7 +12,7 @@ import 'dart:ui';
 class OneShot {
   OneShot(this.duration);
 
-  final double duration;
+  double duration;
   double _t = 0;
   bool _active = false;
 
@@ -106,6 +108,36 @@ class Shimmer extends OneShot {
 /// The light flooding the board on a win.
 class WinFlash extends OneShot {
   WinFlash() : super(0.4);
+}
+
+/// The last glide of a run that ended on its beat (a win or a loss): the
+/// clock stops in that same beat, so the board times the glide itself.
+class FinishGlide extends OneShot {
+  FinishGlide() : super(0.2);
+
+  /// Starts a glide lasting [seconds].
+  void startFor(double seconds) {
+    duration = seconds;
+    start();
+  }
+}
+
+/// [color] at 33 opacity steps, built once, so drawing a fading colour every
+/// frame allocates nothing.
+class AlphaRamp {
+  AlphaRamp(Color color)
+    : _steps = List.generate(
+        _count + 1,
+        (i) => color.withValues(alpha: color.a * i / _count),
+        growable: false,
+      );
+
+  static const _count = 32;
+
+  final List<Color> _steps;
+
+  /// The colour at [alpha] (0 to 1) of its own opacity.
+  Color at(double alpha) => _steps[(alpha.clamp(0.0, 1.0) * _count).round()];
 }
 
 /// The exit's glow: 0 to 1 and back every 1.2 s.
@@ -226,9 +258,11 @@ class PipMotion {
   double _kick = 0;
   double _kickT = _kickDuration;
   Offset? _last;
+  bool _rewinding = false;
 
-  /// True while the current beat carries Pip to another tile.
-  bool get moving => _travel != Offset.zero;
+  /// True while the current beat carries Pip to another tile, forward or
+  /// back.
+  bool get moving => _travel != Offset.zero || _rewinding;
 
   /// Unit direction the eye looks; the last travel direction.
   Offset get lookDir => _look;
@@ -249,6 +283,7 @@ class PipMotion {
 
   /// A beat began; [dir] is the unit step Pip takes (zero when it stays).
   void onBeat(Offset dir) {
+    _rewinding = false;
     if (dir != Offset.zero) {
       if (_travel == Offset.zero) {
         _startKick(startStretch);
@@ -262,8 +297,16 @@ class PipMotion {
     _travel = dir;
   }
 
+  /// A rewind beat: Pip glides back still facing forward, with no lean or
+  /// stretch kick.
+  void onRewindBeat() {
+    _travel = Offset.zero;
+    _rewinding = true;
+  }
+
   /// Time froze after the last beat.
   void onStop() {
+    _rewinding = false;
     if (_travel != Offset.zero) _startKick(stopSquash);
     _travel = Offset.zero;
   }
@@ -271,6 +314,7 @@ class PipMotion {
   /// Forgets the pose, e.g. on restart.
   void reset() {
     _travel = Offset.zero;
+    _rewinding = false;
     _lean = 0;
     _kickT = _kickDuration;
     _last = null;
@@ -297,5 +341,114 @@ class PipMotion {
   void _startKick(double amount) {
     _kick = amount;
     _kickT = 0;
+  }
+}
+
+/// Every world effect on the board, advanced together. Pip's own body
+/// language lives in [PipMotion].
+class BoardEffects {
+  static const batteryFlashPeriod = 0.5;
+
+  final nudge = BumpNudge();
+  final bob = IdleBob();
+  final exitPulse = ExitPulse();
+  final winFlash = WinFlash();
+  final finish = FinishGlide();
+  final Map<Position, DoorSlide> doors = {};
+  final Map<Position, PlateRipple> ripples = {};
+  final List<TrailBuffer> ghostTrails = [];
+  final List<Shimmer> shimmers = [];
+
+  /// Seconds of flowing time, for the echo flicker.
+  double flicker = 0;
+
+  /// Position within the low-battery flash.
+  double batteryPhase = 0;
+
+  /// The low-battery warning shows full red now: in the flash's lit half,
+  /// or always when effects are reduced.
+  bool batteryRedLit({required bool reduceEffects}) =>
+      reduceEffects || batteryPhase < batteryFlashPeriod / 2;
+
+  /// Opacity of the win light over the board: a fading flood of light, or a
+  /// steady glow when effects are reduced.
+  double winLight({required bool reduceEffects}) {
+    if (!winFlash.active) return 0;
+    return reduceEffects ? 0.3 : 0.7 * (1 - winFlash.progress);
+  }
+
+  /// Fresh trails and shimmers for [count] echoes; those from [shimmerFrom]
+  /// on shimmer in.
+  void resetEchoes(int count, {int? shimmerFrom}) {
+    ghostTrails
+      ..clear()
+      ..addAll([for (var i = 0; i < count; i++) TrailBuffer()]);
+    shimmers
+      ..clear()
+      ..addAll([for (var i = 0; i < count; i++) Shimmer()]);
+    for (var i = shimmerFrom ?? count; i < count; i++) {
+      shimmers[i].start();
+    }
+  }
+
+  void clearTrails() {
+    for (final t in ghostTrails) {
+      t.clear();
+    }
+  }
+
+  /// Advances one-shots, door slides and echo trails. Looping effects (bob,
+  /// exit pulse, flicker, battery flash) run only while time [flowing].
+  void update(
+    double dt, {
+    required bool flowing,
+    required List<Offset> ghostTiles,
+    required bool reduceEffects,
+  }) {
+    nudge.update(dt);
+    winFlash.update(dt);
+    for (final d in doors.values) {
+      d.update(dt);
+    }
+    for (final r in ripples.values) {
+      r.update(dt);
+    }
+    for (var i = 0; i < ghostTrails.length && i < ghostTiles.length; i++) {
+      final trail = ghostTrails[i];
+      final at = ghostTiles[i];
+      if (reduceEffects) {
+        trail.clear();
+      } else if (trail.points.isNotEmpty && trail.points.last == at) {
+        // Standing still (or frozen): the trail fades behind it.
+        trail.shrink(dt * 3);
+      } else {
+        trail.add(at);
+      }
+      shimmers[i].update(dt);
+    }
+    if (flowing) {
+      bob.update(dt);
+      exitPulse.update(dt);
+      flicker += dt;
+      batteryPhase = (batteryPhase + dt) % batteryFlashPeriod;
+    }
+  }
+
+  /// A short effect is still playing out.
+  bool get busy {
+    if (nudge.active || winFlash.active || finish.active) return true;
+    for (final d in doors.values) {
+      if (d.active) return true;
+    }
+    for (final r in ripples.values) {
+      if (r.active) return true;
+    }
+    for (final s in shimmers) {
+      if (s.active) return true;
+    }
+    for (final t in ghostTrails) {
+      if (!t.isEmpty) return true;
+    }
+    return false;
   }
 }

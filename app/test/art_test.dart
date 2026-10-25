@@ -150,6 +150,24 @@ void main() {
     expect(posed, isNot(plain));
   });
 
+  test('a flickering Pip does not build a shader per frame', () async {
+    const size = Size(64, 64);
+    await _draw(size, (c) {
+      paintPip(c, const Offset(32, 32), 20, Colors.cyan, opacity: 0.55);
+    });
+    final before = pipShaderBuilds;
+    await _draw(size, (c) {
+      // 120 frames of flicker and a 300 ms shimmer's worth of opacities.
+      for (var i = 0; i < 120; i++) {
+        final flicker = 0.55 * (0.92 + 0.08 * (i % 17) / 17);
+        paintPip(c, const Offset(32, 32), 20, Colors.cyan, opacity: flicker);
+        paintPip(c, const Offset(32, 32), 20, Colors.cyan, opacity: i / 119);
+      }
+    });
+    // At most one shader per 1/32 opacity step, never one per frame.
+    expect(pipShaderBuilds - before, lessThanOrEqualTo(33));
+  });
+
   test('a solved building lights one window per star', () {
     for (var seed = 0; seed < 4; seed++) {
       for (var k = 0; k <= 3; k++) {

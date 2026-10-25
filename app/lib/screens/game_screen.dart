@@ -84,7 +84,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       setState(() {
         _controller = controller;
         _flow = flow;
-        _board = EchoBoard(flow);
+        _board = EchoBoard(
+          flow,
+          beatLength: () => widget.services.progress.moveSpeed.beat,
+        );
       });
     } catch (_) {
       if (mounted) setState(() => _failed = true);

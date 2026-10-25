@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:echo_app/game/board_effects.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -150,6 +151,72 @@ void main() {
       }
       expect(m.busy, isFalse);
       expect(m.trail.isEmpty, isTrue);
+    });
+  });
+
+  group('fix round 1', () {
+    test('rewind beats keep Pip facing forward with no lean or kick', () {
+      final m = PipMotion();
+      m.onBeat(const Offset(1, 0));
+      for (var i = 0; i < 20; i++) {
+        m.update(0.02, Offset(i * 0.05, 0));
+      }
+      m.onStop();
+      m.update(1, const Offset(1, 0));
+      expect(m.stretch, 0);
+      m.onRewindBeat();
+      expect(m.stretch, 0);
+      expect(m.moving, isTrue);
+      for (var i = 1; i <= 10; i++) {
+        m.update(0.01, Offset(1 - i * 0.1, 0));
+        expect(m.lean, lessThanOrEqualTo(1e-9));
+        expect(m.stretch, 0);
+      }
+      expect(m.lookDir, const Offset(1, 0));
+      m.onStop();
+      expect(m.stretch, 0);
+    });
+
+    test('FinishGlide lasts the beat it is given', () {
+      final g = FinishGlide()..startFor(0.3);
+      g.update(0.15);
+      expect(g.progress, closeTo(0.5, 1e-9));
+      g.update(0.15);
+      expect(g.active, isFalse);
+      expect(g.progress, 1);
+    });
+
+    test('AlphaRamp reuses the same colour objects', () {
+      final ramp = AlphaRamp(const Color(0xFF00E5FF));
+      expect(identical(ramp.at(0.5), ramp.at(0.5)), isTrue);
+      expect(ramp.at(1).a, closeTo(1, 1e-9));
+      expect(ramp.at(0).a, 0);
+      expect(ramp.at(0.5).a, closeTo(0.5, 1 / 64));
+    });
+
+    test('reduced effects: battery warning steady red, win light steady', () {
+      final fx = BoardEffects();
+      var lit = 0;
+      var dark = 0;
+      for (var i = 0; i < 20; i++) {
+        fx.update(
+          0.05,
+          flowing: true,
+          ghostTiles: const [],
+          reduceEffects: false,
+        );
+        fx.batteryRedLit(reduceEffects: false) ? lit++ : dark++;
+        expect(fx.batteryRedLit(reduceEffects: true), isTrue);
+      }
+      expect(lit, greaterThan(0));
+      expect(dark, greaterThan(0));
+
+      fx.winFlash.start();
+      final full = fx.winLight(reduceEffects: false);
+      final steady = fx.winLight(reduceEffects: true);
+      fx.update(0.2, flowing: false, ghostTiles: const [], reduceEffects: true);
+      expect(fx.winLight(reduceEffects: false), lessThan(full));
+      expect(fx.winLight(reduceEffects: true), steady);
     });
   });
 }
