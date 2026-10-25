@@ -22,6 +22,7 @@ class FlowController extends ChangeNotifier {
   final ValueNotifier<Move?> _bumpDir = ValueNotifier(null);
   final ValueNotifier<bool> _frozenN = ValueNotifier(true);
   final ValueNotifier<bool> _rewinding = ValueNotifier(false);
+  final ValueNotifier<int> _releaseEpoch = ValueNotifier(0);
   GameState? _from;
 
   /// Increments on each bump.
@@ -42,6 +43,10 @@ class FlowController extends ChangeNotifier {
 
   /// True while a rewind input is held and time is running backwards.
   ValueListenable<bool> get rewinding => _rewinding;
+
+  /// Bumped by [releaseAll]. Input widgets watch it to forget the pointer
+  /// they track, so a touch lost to the background never blocks a new one.
+  ValueListenable<int> get releaseEpoch => _releaseEpoch;
 
   void _syncFeel() {
     _frozenN.value = frozen;
@@ -69,7 +74,7 @@ class FlowController extends ChangeNotifier {
     Move? dir,
     InputSource source = InputSource.button,
   ]) {
-    if (kind == IntentKind.none) return;
+    if (kind == IntentKind.none || !_playing) return;
     final before = _top;
     _held
       ..removeWhere((e) => e.$1 == source && e.$2 == kind)
@@ -100,6 +105,7 @@ class FlowController extends ChangeNotifier {
     _held.clear();
     clock.setIntent(IntentKind.none);
     _syncFeel();
+    _releaseEpoch.value++;
   }
 
   /// The winning intent; sources do not matter for the clock.
@@ -120,7 +126,15 @@ class FlowController extends ChangeNotifier {
     _syncFeel();
   }
 
+  bool get _playing => game.state.status == GameStatus.playing;
+
   void _onBeat(IntentKind kind, Move? dir) {
+    // After a win or loss nothing steps: the beat only stops the clock.
+    if (!_playing) {
+      clock.stop();
+      _syncFeel();
+      return;
+    }
     switch (kind) {
       case IntentKind.none:
         return;
@@ -148,7 +162,9 @@ class FlowController extends ChangeNotifier {
   }
 
   void _step(Move m) {
+    final before = game.state;
     game.move(m);
+    if (identical(game.state, before)) return; // a no-op move
     _from = game.previous;
     notifyListeners();
   }
@@ -177,6 +193,7 @@ class FlowController extends ChangeNotifier {
     _bumpDir.dispose();
     _frozenN.dispose();
     _rewinding.dispose();
+    _releaseEpoch.dispose();
     super.dispose();
   }
 }

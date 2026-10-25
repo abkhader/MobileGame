@@ -2,7 +2,6 @@
   "id": "1-04",
   "name": "Twin Doors",
   "runLimit": 1,
-  "tip": "Hold ⏳ to let time pass while Pip stays still.",
   "grid": [
     "######",
     "###E##",

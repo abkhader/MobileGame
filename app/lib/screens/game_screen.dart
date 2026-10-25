@@ -557,6 +557,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         label: label,
         onStart: () => _press(kind),
         onEnd: () => _release(kind),
+        releaseEpoch: _flow!.releaseEpoch,
       ),
     ),
   );
@@ -777,8 +778,9 @@ class _BoardInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Listener(
     // Runs after the joystick's own handlers: wake the board if needed.
+    // Moves do not wake it: a direction change fires a beat, and beats wake
+    // the board, so a thumb resting in the dead zone costs no frames.
     onPointerDown: (_) => onChanged(),
-    onPointerMove: (_) => onChanged(),
     onPointerUp: (_) => onChanged(),
     onPointerCancel: (_) => onChanged(),
     child: FloatingJoystick(flow: flow, child: child),

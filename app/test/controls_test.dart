@@ -56,24 +56,123 @@ void main() {
     expect(joystickDirection(const Offset(0, 30)), Move.down);
   });
 
-  testWidgets('joystick only spawns in the lower 60%', (t) async {
-    await _pumpGame(t, '1-01');
-    final start = _game(t).state.player;
-    final high = await dragJoystick(
-      t,
-      const Offset(60, 0),
-      heightFraction: 0.3,
-    );
-    await t.pump(beat);
-    await t.pump(beat);
-    expect(_game(t).state.tick, 0);
-    await high.up();
-    await settle(t);
+  testWidgets('the joystick spawns anywhere on the board area', (t) async {
+    for (final fraction in [0.1, 0.5, 0.9]) {
+      await _pumpGame(t, '1-01');
+      final start = _game(t).state.player;
+      final stick = await dragJoystick(
+        t,
+        const Offset(60, 0),
+        heightFraction: fraction,
+      );
+      await t.pump(beat);
+      expect(
+        _game(t).state.player.x,
+        greaterThan(start.x),
+        reason: 'thumb at $fraction of the board height',
+      );
+      await stick.up();
+      await settle(t);
+    }
+  });
 
-    final low = await dragJoystick(t, const Offset(60, 0));
+  testWidgets('the joystick re-anchors: a dragged-out thumb turns quickly', (
+    t,
+  ) async {
+    await _pumpGame(t, '2-03');
+    final r = t.getRect(board);
+    final g = await t.startGesture(
+      Offset(r.center.dx - 50, r.top + r.height * 0.5),
+    );
+    for (var i = 0; i < 25; i++) {
+      await g.moveBy(const Offset(4, 0));
+    }
+    final flow = _flow(t) as FlowController;
+    expect(flow.held, [(InputSource.joystick, IntentKind.move, Move.right)]);
+    // The centre trails 44 px behind the thumb, so about 45 px straight up
+    // turns it. Without re-anchoring the thumb, 100 px out, would need more
+    // than 100 px.
+    for (var i = 0; i < 15; i++) {
+      await g.moveBy(const Offset(0, -3));
+    }
+    expect(flow.held, [(InputSource.joystick, IntentKind.move, Move.up)]);
+    await g.up();
+    await settle(t);
+  });
+
+  testWidgets('a thumb resting in the dead zone wakes and moves nothing', (
+    t,
+  ) async {
+    await _pumpGame(t, '2-03');
+    final r = t.getRect(board);
+    final g = await t.startGesture(r.center);
+    // The touch itself wakes the board once; let it settle again.
+    await pumpFrames(t, const Duration(milliseconds: 300));
+    final echo = (t.state(find.byType(GameScreen)) as dynamic).boardForTesting;
+    expect(echo.paused as bool, isTrue);
+    for (final d in const [
+      Offset(3, 0),
+      Offset(0, 4),
+      Offset(-5, -2),
+      Offset(2, 3),
+    ]) {
+      await g.moveBy(d);
+      expect(echo.paused as bool, isTrue);
+      await t.pump(const Duration(milliseconds: 50));
+    }
+    expect(_game(t).state.tick, 0);
+    expect(_flow(t).held as List, isEmpty);
+    expect(_flow(t).clock.running as bool, isFalse);
+    await g.up();
+    await settle(t);
+  });
+
+  testWidgets('after a lifecycle release the joystick takes a new thumb', (
+    t,
+  ) async {
+    await _pumpGame(t, '2-03');
+    final first = await dragJoystick(t, const Offset(60, 0));
     await t.pump(beat);
-    expect(_game(t).state.player.x, greaterThan(start.x));
-    await low.up();
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await t.pump(beat);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await settle(t);
+    final x = _game(t).state.player.x;
+    final r = t.getRect(board);
+    final second = await t.startGesture(
+      Offset(r.center.dx, r.top + r.height * 0.3),
+    );
+    await second.moveBy(const Offset(-60, 0));
+    await t.pump(beat);
+    expect(_game(t).state.player.x, lessThan(x));
+    // The stale first thumb lifting does not drop the new one.
+    await first.up();
+    final flow = _flow(t) as FlowController;
+    expect(flow.held, [(InputSource.joystick, IntentKind.move, Move.left)]);
+    await second.up();
+    await settle(t);
+  });
+
+  testWidgets('after a lifecycle release a hold button takes a new press', (
+    t,
+  ) async {
+    await _pumpGame(t, '2-03');
+    final waitAt = t.getCenter(find.bySemanticsLabel('Wait'));
+    final first = await t.startGesture(waitAt);
+    await t.pump(beat);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await t.pump(beat);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await settle(t);
+    final flow = _flow(t) as FlowController;
+    expect(flow.held, isEmpty);
+    final second = await t.startGesture(waitAt);
+    await t.pump(beat);
+    expect(flow.held, [(InputSource.button, IntentKind.wait, null)]);
+    await first.up();
+    expect(flow.held, [(InputSource.button, IntentKind.wait, null)]);
+    await second.up();
+    expect(flow.held, isEmpty);
     await settle(t);
   });
 
@@ -177,17 +276,17 @@ void main() {
     expect(find.byIcon(Icons.flag), findsOneWidget);
   });
 
-  testWidgets('no swipe-to-move remains', (t) async {
+  testWidgets('no swipe-to-move remains: a tap on the board moves nothing', (
+    t,
+  ) async {
+    // The joystick covers the whole board, so a fling is a short joystick
+    // hold; what must not exist is a tap or swipe handler of its own.
     await _pumpGame(t, '1-01');
     final r = t.getRect(board);
-    await t.flingFrom(
-      Offset(r.center.dx, r.top + r.height * 0.2),
-      const Offset(300, 0),
-      1000,
-    );
-    await settle(t);
-    await t.tap(board);
-    await settle(t);
+    for (final fraction in [0.1, 0.5, 0.9]) {
+      await t.tapAt(Offset(r.center.dx, r.top + r.height * fraction));
+      await settle(t);
+    }
     expect(_game(t).state.tick, 0);
   });
 

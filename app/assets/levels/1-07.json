@@ -2,6 +2,7 @@
   "id": "1-07",
   "name": "Handoff",
   "runLimit": 2,
+  "tip": "Hold ⏳ to let time pass while Pip stays still.",
   "grid": [
     "########",
     "#b.a.S.#",

@@ -306,4 +306,32 @@ void main() {
     await t.pump(const Duration(milliseconds: 500));
     expect(won, isEmpty);
   });
+
+  testWidgets('the exit glow is baked once per size, not blurred per frame', (
+    t,
+  ) async {
+    await _pumpGame(t, '1-03');
+    expect(_board(t).exitGlowBakesForTesting, 1);
+    // Time flows for a while: the exit pulses.
+    await holdKey(
+      t,
+      LogicalKeyboardKey.space,
+      const Duration(milliseconds: 1500),
+    );
+    await _settleFully(t);
+    expect(_board(t).exitGlowBakesForTesting, 1);
+
+    addTearDown(t.view.reset);
+    t.view.physicalSize = const Size(1600, 2400);
+    await t.pump(beat);
+    await t.pump(beat);
+    expect(_board(t).exitGlowBakesForTesting, 2);
+  });
+
+  testWidgets('the battery ring is big enough to read on a phone', (t) async {
+    await _pumpGame(t, '1-03');
+    final (radius, stroke) = _board(t).batteryRingForTesting;
+    expect(radius, closeTo(0.15, 1e-9), reason: 'radius in cells');
+    expect(stroke, closeTo(0.058, 1e-3), reason: 'stroke in cells');
+  });
 }

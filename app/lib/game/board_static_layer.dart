@@ -140,7 +140,7 @@ class BoardStaticLayer {
     }
     doorHalfDown = Rect.fromLTWH(0, 0, doorW, cell / 2);
     doorHalfUp = Rect.fromLTWH(0, -cell / 2, doorW, cell / 2);
-    ringRect = Rect.fromCircle(center: Offset.zero, radius: cell * 0.09);
+    ringRect = Rect.fromCircle(center: Offset.zero, radius: cell * 0.15);
   }
 
   void _record(BoardLayout layout, double w, double h, double dpr) {

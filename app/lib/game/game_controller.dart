@@ -37,9 +37,12 @@ class GameController extends ChangeNotifier {
       : null;
 
   /// True when [m] would leave Pip in place (wall, closed door, edge). Uses
-  /// the rules' own logic. Waiting is never blocked.
+  /// the rules' own logic. Waiting is never blocked, and nothing is once the
+  /// level is won or lost (the rules refuse to step then).
   bool isBlocked(Move m) =>
-      m != Move.wait && Rules.step(_state, m).player == _state.player;
+      _playing &&
+      m != Move.wait &&
+      Rules.step(_state, m).player == _state.player;
 
   void move(Move m) {
     if (!_playing) return;

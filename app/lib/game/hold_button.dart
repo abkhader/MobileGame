@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// A press-and-hold button: [onStart] when a finger lands, [onEnd] when it
@@ -8,6 +9,7 @@ class HoldButton extends StatefulWidget {
     required this.label,
     required this.onStart,
     required this.onEnd,
+    this.releaseEpoch,
     super.key,
   });
 
@@ -16,12 +18,41 @@ class HoldButton extends StatefulWidget {
   final VoidCallback onStart;
   final VoidCallback onEnd;
 
+  /// When it changes, every input was released elsewhere (the app went to
+  /// the background): forget the finger and the pressed look.
+  final ValueListenable<int>? releaseEpoch;
+
   @override
   State<HoldButton> createState() => _HoldButtonState();
 }
 
 class _HoldButtonState extends State<HoldButton> {
   int? _pointer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.releaseEpoch?.addListener(_forget);
+  }
+
+  @override
+  void didUpdateWidget(HoldButton old) {
+    super.didUpdateWidget(old);
+    if (old.releaseEpoch != widget.releaseEpoch) {
+      old.releaseEpoch?.removeListener(_forget);
+      widget.releaseEpoch?.addListener(_forget);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.releaseEpoch?.removeListener(_forget);
+    super.dispose();
+  }
+
+  void _forget() {
+    if (_pointer != null) setState(() => _pointer = null);
+  }
 
   void _down(PointerDownEvent e) {
     if (_pointer != null) return;

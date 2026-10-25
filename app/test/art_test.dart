@@ -25,6 +25,30 @@ class _PaneCounter implements Canvas {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
+/// Records every Paint a drawing uses; draws nothing.
+class _PaintSpy implements Canvas {
+  final List<Paint> paints = [];
+  int images = 0;
+
+  @override
+  void drawCircle(Offset c, double radius, Paint paint) => paints.add(paint);
+
+  @override
+  void drawLine(Offset p1, Offset p2, Paint paint) => paints.add(paint);
+
+  @override
+  void drawOval(Rect rect, Paint paint) => paints.add(paint);
+
+  @override
+  void drawImageRect(ui.Image image, Rect src, Rect dst, Paint paint) {
+    images++;
+    paints.add(paint);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
 int _litPanes(Building b, {bool allLit = false, int seed = 0}) {
   final canvas = _PaneCounter();
   paintSkyline(canvas, const Size(48, 148), [b], allLit: allLit, seed: seed);
@@ -188,5 +212,90 @@ void main() {
         greaterThan(3),
       );
     }
+  });
+
+  group('baked glows', () {
+    setUp(clearPipGlowCache);
+
+    test('paintPip draws no live blur: halo and spark are baked images', () {
+      final spy = _PaintSpy();
+      paintPip(spy, const Offset(40, 40), 30, Colors.white);
+      paintPip(spy, const Offset(40, 40), 30, Colors.cyan, opacity: 0.4);
+      expect(spy.paints.where((p) => p.maskFilter != null), isEmpty);
+      expect(spy.images, 4, reason: 'a halo and a spark glow per Pip');
+    });
+
+    test('flicker and shimmer reuse the baked glows', () async {
+      const size = Size(64, 64);
+      final before = pipGlowBakes;
+      await _draw(size, (c) {
+        for (var i = 0; i < 120; i++) {
+          final flicker = 0.55 * (0.92 + 0.08 * (i % 17) / 17);
+          paintPip(c, const Offset(32, 32), 20, Colors.cyan, opacity: flicker);
+          paintPip(c, const Offset(32, 32), 20, Colors.cyan, opacity: i / 119);
+        }
+      });
+      // One halo and one spark glow for the colour.
+      expect(pipGlowBakes - before, 2);
+    });
+
+    test('the glow cache is bounded and keyed by radius', () {
+      final spy = _PaintSpy();
+      for (var i = 0; i < 200; i++) {
+        paintPip(spy, Offset.zero, 20, Color(0xFF000000 + i * 997));
+      }
+      expect(pipGlowCacheSize, lessThanOrEqualTo(pipGlowCacheLimit));
+      clearPipGlowCache();
+      paintPip(spy, Offset.zero, 20, Colors.white);
+      final atTwenty = pipGlowCacheSize;
+      expect(atTwenty, 2);
+      // The board and a HUD icon can share a frame: two radii stay cached.
+      paintPip(spy, Offset.zero, 30, Colors.white);
+      expect(pipGlowCacheSize, 4);
+      final bakes = pipGlowBakes;
+      paintPip(spy, Offset.zero, 20, Colors.white);
+      paintPip(spy, Offset.zero, 30, Colors.white);
+      expect(pipGlowBakes, bakes);
+      // A third radius (a resize) drops the oldest.
+      paintPip(spy, Offset.zero, 40, Colors.white);
+      expect(pipGlowCacheSize, 4);
+      paintPip(spy, Offset.zero, 20, Colors.white);
+      expect(pipGlowBakes, bakes + 4);
+    });
+
+    test('the baked halo looks like the live blur it replaces', () async {
+      const size = Size(96, 96);
+      const center = Offset(48, 48);
+      const r = 30.0;
+      final baked = await _pixels(size, (c) {
+        c.drawColor(Colors.black, BlendMode.src);
+        paintPip(c, center, r, Colors.cyan);
+      });
+      final live = await _pixels(size, (c) {
+        c.drawColor(Colors.black, BlendMode.src);
+        c.drawCircle(
+          center,
+          r * 1.35,
+          Paint()
+            ..color = Colors.cyan.withValues(alpha: 0.35)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, r * 0.45),
+        );
+      });
+      // Compare a ring outside the body, where only the halo shows; the
+      // antenna sits in the upper half, so only the lower half counts.
+      var worst = 0;
+      for (var y = 48; y < 96; y++) {
+        for (var x = 0; x < 96; x++) {
+          final d = (Offset(x + 0.5, y + 0.5) - center).distance;
+          if (d < r * 1.1 || d > 47) continue;
+          final o = (y * 96 + x) * 4;
+          for (var k = 0; k < 3; k++) {
+            final diff = (baked[o + k] - live[o + k]).abs();
+            if (diff > worst) worst = diff;
+          }
+        }
+      }
+      expect(worst, lessThanOrEqualTo(3));
+    });
   });
 }

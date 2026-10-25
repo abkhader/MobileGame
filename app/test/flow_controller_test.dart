@@ -219,4 +219,84 @@ void main() {
     game.restart();
     expect(f.from, isNull);
   });
+
+  group('after the game ends', () {
+    /// One run of 25 waits: the battery runs out and the level is lost.
+    (GameController, FlowController) lostByBattery() {
+      final game = GameController(_level(['S.#E'], runLimit: 1));
+      final f = _flow(game);
+      f.press(IntentKind.wait);
+      _hold(f, 25 * 0.2 + 0.5);
+      f.release(IntentKind.wait);
+      expect(game.state.status, GameStatus.lost);
+      expect(f.clock.running, isFalse);
+      return (game, f);
+    }
+
+    test('isBlocked is false once the game is not playing', () {
+      final (game, _) = lostByBattery();
+      for (final m in Move.values) {
+        expect(game.isBlocked(m), isFalse);
+      }
+    });
+
+    test('a held move after a loss fires no beats and throws nothing', () {
+      final (game, f) = lostByBattery();
+      final from = f.from;
+      final state = game.state;
+      var notified = 0;
+      f.addListener(() => notified++);
+      f.press(IntentKind.move, Move.right, InputSource.joystick);
+      _hold(f, 1);
+      f.press(IntentKind.move, Move.left, InputSource.keys);
+      _hold(f, 1);
+      expect(f.clock.running, isFalse);
+      expect(f.frozen, isTrue);
+      expect(f.bumps.value, 0);
+      expect(f.from, same(from));
+      expect(game.state, same(state));
+      expect(notified, 0);
+    });
+
+    test('a held wait after a loss fires no beats and keeps from', () {
+      final (game, f) = lostByBattery();
+      final from = f.from;
+      final state = game.state;
+      var notified = 0;
+      f.addListener(() => notified++);
+      f.press(IntentKind.wait);
+      _hold(f, 1);
+      f.setIntent(IntentKind.wait);
+      _hold(f, 1);
+      expect(f.clock.running, isFalse);
+      expect(f.from, same(from));
+      expect(game.state, same(state));
+      expect(notified, 0);
+    });
+
+    test('a held move after a win (during the win delay) is ignored', () {
+      final game = GameController(_level(['SE#']));
+      final f = _flow(game);
+      f.setIntent(IntentKind.move, Move.right);
+      expect(game.state.status, GameStatus.won);
+      final from = f.from;
+      f.press(IntentKind.move, Move.right, InputSource.joystick);
+      _hold(f, 1);
+      expect(f.clock.running, isFalse);
+      expect(f.bumps.value, 0);
+      expect(f.from, same(from));
+    });
+  });
+
+  test('releaseAll bumps the release epoch; other releases do not', () {
+    final game = GameController(_level(['S...E']));
+    final f = _flow(game);
+    final epoch = f.releaseEpoch.value;
+    f.press(IntentKind.move, Move.right, InputSource.joystick);
+    f.release(IntentKind.move, InputSource.joystick);
+    f.releaseSource(InputSource.keys);
+    expect(f.releaseEpoch.value, epoch);
+    f.releaseAll();
+    expect(f.releaseEpoch.value, epoch + 1);
+  });
 }

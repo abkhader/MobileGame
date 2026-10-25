@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -6,10 +7,9 @@ import 'package:flutter/painting.dart';
 import '../game/palette.dart' as palette;
 
 // Shared drawing state: Pip is painted every frame, several times, so the
-// Paints, blur filters and body gradient are reused instead of rebuilt.
-final _haloPaint = Paint();
+// Paints, glow images and body gradient are reused instead of rebuilt.
+final _glowPaint = Paint()..filterQuality = FilterQuality.low;
 final _antennaPaint = Paint()..strokeCap = StrokeCap.round;
-final _sparkGlowPaint = Paint();
 final _sparkPaint = Paint();
 final _bodyPaint = Paint();
 final _eyePaint = Paint();
@@ -17,10 +17,115 @@ final _eyeLinePaint = Paint()..strokeCap = StrokeCap.round;
 final _catchPaint = Paint();
 final _glossPaint = Paint();
 
-final Map<double, MaskFilter> _blurs = {};
-MaskFilter _blur(double sigma) {
-  if (_blurs.length > 16) _blurs.clear();
-  return _blurs[sigma] ??= MaskFilter.blur(BlurStyle.normal, sigma);
+// The halo and the spark's glow are blurred discs. A live blur mask filter
+// costs a blur pass per Pip per frame (heavy in Safari), so each is baked
+// once into an image per (colour, radius) and drawn with the bot's opacity as
+// the paint's alpha: a uniform disc scaled in alpha is the same picture.
+// Two radii stay cached (the board and a HUD icon can share a frame); a third
+// radius (a resize) drops the oldest. Each radius holds at most
+// [pipGlowCacheLimit] / 2 images.
+
+/// Baked glow images kept at most, over both cached radii.
+@visibleForTesting
+const pipGlowCacheLimit = 32;
+
+/// Glow images are baked at this many pixels per logical pixel: a blur is
+/// smooth, so upscaling it on a 3x screen does not show.
+const _glowScale = 2.0;
+
+/// A baked glow: its image and where it goes, centred on the origin.
+class _Glow {
+  _Glow(this.image, this.extent);
+
+  final ui.Image image;
+  final double extent;
+
+  late final Rect src = Rect.fromLTWH(
+    0,
+    0,
+    image.width.toDouble(),
+    image.height.toDouble(),
+  );
+  late final Rect dst = Rect.fromCircle(center: Offset.zero, radius: extent);
+}
+
+// Radius -> (colour and kind -> glow), oldest radius first.
+final Map<double, Map<int, _Glow>> _glows = {};
+
+/// How many glow images were baked; for tests.
+@visibleForTesting
+int pipGlowBakes = 0;
+
+/// How many glow images are cached; for tests.
+@visibleForTesting
+int get pipGlowCacheSize =>
+    _glows.values.fold(0, (sum, byColor) => sum + byColor.length);
+
+/// Disposes every baked glow image.
+@visibleForTesting
+void clearPipGlowCache() {
+  for (final byColor in _glows.values) {
+    for (final g in byColor.values) {
+      g.image.dispose();
+    }
+  }
+  _glows.clear();
+}
+
+/// The baked glow of a disc of [discRadius] in [color] at [alpha] of its
+/// opacity, blurred by [sigma]. [kind] tells the halo and the spark glow
+/// apart for the same radius; each kind always uses the same sizes and alpha.
+_Glow _glow(
+  double r,
+  int kind,
+  Color color,
+  double alpha,
+  double discRadius,
+  double sigma,
+) {
+  var byColor = _glows[r];
+  if (byColor == null) {
+    while (_glows.length >= 2) {
+      final oldest = _glows.keys.first;
+      for (final g in _glows.remove(oldest)!.values) {
+        g.image.dispose();
+      }
+    }
+    byColor = _glows[r] = {};
+  }
+  final key = color.toARGB32() * 2 + kind;
+  final cached = byColor[key];
+  if (cached != null) return cached;
+  if (byColor.length >= pipGlowCacheLimit ~/ 2) {
+    for (final g in byColor.values) {
+      g.image.dispose();
+    }
+    byColor.clear();
+  }
+  pipGlowBakes++;
+  // The blur fades out within three sigma of the disc's edge.
+  final extent = discRadius + sigma * 3 + 1;
+  final px = (extent * 2 * _glowScale).ceil();
+  final recorder = ui.PictureRecorder();
+  Canvas(recorder)
+    ..scale(_glowScale)
+    ..translate(extent, extent)
+    ..drawCircle(
+      Offset.zero,
+      discRadius,
+      Paint()
+        ..color = _fade(color, 1, alpha)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma),
+    );
+  final picture = recorder.endRecording();
+  final image = picture.toImageSync(px, px);
+  picture.dispose();
+  return byColor[key] = _Glow(image, px / _glowScale / 2);
+}
+
+void _drawGlow(Canvas canvas, Offset at, _Glow glow, double opacity) {
+  _glowPaint.color = Color.fromRGBO(255, 255, 255, opacity);
+  canvas.drawImageRect(glow.image, glow.src, glow.dst.shift(at), _glowPaint);
 }
 
 // Body gradients in local space (Pip centred on the origin), keyed by colour
@@ -109,12 +214,11 @@ void paintPip(
   }
 
   // Soft halo.
-  canvas.drawCircle(
+  _drawGlow(
+    canvas,
     Offset.zero,
-    r * 1.35,
-    _haloPaint
-      ..color = _fade(color, a, 0.35)
-      ..maskFilter = _blur(r * 0.45),
+    _glow(r, 0, color, 0.35, r * 1.35, r * 0.45),
+    a,
   );
 
   // Antenna, behind the body so it grows out of the top.
@@ -129,13 +233,7 @@ void paintPip(
         ..strokeWidth = r * 0.09,
     );
     final spark = palette.ghostColors[2];
-    canvas.drawCircle(
-      tip,
-      r * 0.26,
-      _sparkGlowPaint
-        ..color = _fade(spark, a, 0.6)
-        ..maskFilter = _blur(r * 0.12),
-    );
+    _drawGlow(canvas, tip, _glow(r, 1, spark, 0.6, r * 0.26, r * 0.12), a);
     canvas.drawCircle(tip, r * 0.12, _sparkPaint..color = _fade(spark, a));
   }
 

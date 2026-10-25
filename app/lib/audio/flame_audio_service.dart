@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flame_audio/flame_audio.dart';
 
 import 'audio_service.dart';
+import 'volume_ramp.dart';
 
 /// [AudioService] backed by flame_audio. Every error is swallowed: sound is
 /// never allowed to break the game (for example when a browser blocks
@@ -19,7 +20,7 @@ class FlameAudioService implements AudioService {
 
   Future<void>? _preload;
   bool _loaded = false;
-  Future<AudioPool>? _movePool;
+  final Map<Sfx, Future<AudioPool>> _pools = {};
   bool _bgmInitialized = false;
   bool _wanted = false;
   bool _frozen = false;
@@ -32,7 +33,19 @@ class FlameAudioService implements AudioService {
   /// Music plays at 40 % of its volume while time is frozen.
   static const _duck = 0.4;
 
+  /// Fades into the duck when time freezes, and back out when it flows.
+  static const _duckIn = Duration(milliseconds: 250);
+  static const _duckOut = Duration(milliseconds: 150);
+
+  /// Sounds that fire every beat get a pool, not a new player each time.
+  static const _pooled = {Sfx.move, Sfx.bump};
+
   double get _targetVolume => _frozen ? _musicVolume * _duck : _musicVolume;
+
+  late final _ramp = VolumeRamp(
+    (v) => FlameAudio.bgm.audioPlayer.setVolume(v),
+    initial: _musicVolume * _duck,
+  );
 
   /// One shared load; a failure clears it so the next call retries.
   Future<void> _ensureLoaded() {
@@ -47,12 +60,12 @@ class FlameAudioService implements AudioService {
         });
   }
 
-  /// One lazily created pool for the move sound; a failure clears it so the
+  /// One lazily created pool per pooled sound; a failure clears it so the
   /// next call retries.
-  Future<AudioPool> _ensureMovePool() {
-    return _movePool ??= FlameAudio.createPool(_files[Sfx.move]!, maxPlayers: 4)
+  Future<AudioPool> _ensurePool(Sfx s) {
+    return _pools[s] ??= FlameAudio.createPool(_files[s]!, maxPlayers: 4)
         .catchError((Object e) {
-          _movePool = null;
+          _pools.remove(s);
           throw e;
         });
   }
@@ -61,9 +74,9 @@ class FlameAudioService implements AudioService {
   Future<void> playSfx(Sfx s) async {
     try {
       if (!_loaded) await _ensureLoaded();
-      if (s == Sfx.move) {
+      if (_pooled.contains(s)) {
         try {
-          await (await _ensureMovePool()).start();
+          await (await _ensurePool(s)).start();
           return;
         } catch (_) {
           // Fall back to a one-shot player below.
@@ -83,6 +96,7 @@ class FlameAudioService implements AudioService {
         _bgmInitialized = true;
       }
       if (!_wanted || FlameAudio.bgm.isPlaying) return;
+      _ramp.jump(_targetVolume);
       await FlameAudio.bgm.play('ambient.wav', volume: _targetVolume);
       if (!_wanted) await FlameAudio.bgm.stop();
     } catch (_) {}
@@ -98,15 +112,17 @@ class FlameAudioService implements AudioService {
 
   @override
   Future<void> setFrozen(bool frozen) async {
+    final changed = frozen != _frozen;
     _frozen = frozen;
     // Called when a level opens: warm the sounds so a rewind press never
     // waits for a load inside the browser's gesture window.
     unawaited(_ensureLoaded().catchError((_) {}));
-    try {
-      if (_bgmInitialized) {
-        await FlameAudio.bgm.audioPlayer.setVolume(_targetVolume);
-      }
-    } catch (_) {}
+    if (!_bgmInitialized) {
+      // Nothing playing yet: the music starts at the right level.
+      _ramp.jump(_targetVolume);
+    } else if (changed) {
+      _ramp.to(_targetVolume, frozen ? _duckIn : _duckOut);
+    }
   }
 
   @override

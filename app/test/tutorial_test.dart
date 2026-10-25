@@ -63,10 +63,15 @@ void main() {
       (await repo.load('1-03')).tip,
       'Tap New echo. Pip starts over, and your echo repeats every move.',
     );
+    // 1-07 is the first level whose solution waits, so ⏳ is taught there.
+    expect((await repo.load('1-04')).tip, isNull);
     expect(
-      (await repo.load('1-04')).tip,
+      (await repo.load('1-07')).tip,
       'Hold ⏳ to let time pass while Pip stays still.',
     );
+    for (final id in ['1-05', '1-06', '1-08', '1-09', '1-10']) {
+      expect((await repo.load(id)).tip, isNull, reason: id);
+    }
   });
 
   testWidgets('the thumb hint shows on 1-01 until the first beat', (t) async {

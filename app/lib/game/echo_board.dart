@@ -63,7 +63,7 @@ class EchoBoard extends FlameGame {
   static const _batteryLowFraction = 0.2;
 
   // Paints, colours and the trail path are reused: render allocates none.
-  final _exitGlowPaint = Paint()..style = PaintingStyle.stroke;
+  final _exitGlowPaint = Paint()..filterQuality = FilterQuality.low;
   final _platePaint = Paint();
   final _ripplePaint = Paint()..style = PaintingStyle.stroke;
   final _doorPaint = Paint();
@@ -91,10 +91,24 @@ class EchoBoard extends FlameGame {
   static final _echoRamps = [for (final c in palette.ghostColors) AlphaRamp(c)];
   static final _playerRamp = AlphaRamp(palette.player);
   static final _exitRamp = AlphaRamp(palette.exit);
+  static final _whiteRamp = AlphaRamp(const Color(0xFFFFFFFF));
   static final _plateRamp = AlphaRamp(palette.platePressed);
 
   final BoardStaticLayer _layer;
   double _cell = -1;
+
+  // The exit's blurred outline, baked once per exit size; the pulse only
+  // changes the paint's alpha, so no blur runs per frame.
+  Image? _exitGlow;
+  Rect _exitGlowSrc = Rect.zero;
+  double _exitGlowMargin = 0;
+  Size _exitGlowSize = Size.zero;
+  double _exitGlowDpr = 0;
+  int _exitGlowBakes = 0;
+
+  /// Battery ring stroke, in cells (its radius, 0.15 cells, is in the
+  /// static layer's ringRect).
+  static const _ringStroke = 0.058;
 
   final PipMotion _pip;
   final _fx = BoardEffects();
@@ -138,6 +152,14 @@ class EchoBoard extends FlameGame {
   bool get winFlashActiveForTesting => _fx.winFlash.active;
 
   @visibleForTesting
+  int get exitGlowBakesForTesting => _exitGlowBakes;
+
+  /// The battery ring's radius and stroke width, in cells.
+  @visibleForTesting
+  (double, double) get batteryRingForTesting =>
+      (_layer.ringRect.width / 2 / _cell, _ringPaint.strokeWidth / _cell);
+
+  @visibleForTesting
   double get pipLeanForTesting => _pip.lean;
 
   @visibleForTesting
@@ -158,6 +180,8 @@ class EchoBoard extends FlameGame {
     flow.removeListener(_onBeat);
     flow.bumps.removeListener(_onBump);
     _layer.dispose();
+    _exitGlow?.dispose();
+    _exitGlow = null;
     super.onRemove();
   }
 
@@ -336,14 +360,44 @@ class EchoBoard extends FlameGame {
   void _sizePaints(double cell) {
     if (cell == _cell) return;
     _cell = cell;
-    _exitGlowPaint
-      ..strokeWidth = cell * 0.08
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.08);
     _ripplePaint.strokeWidth = math.max(1, cell * 0.04);
     _trailPaint.strokeWidth = cell * 0.22;
     _shimmerPaint.strokeWidth = math.max(1, cell * 0.05);
-    _ringTrackPaint.strokeWidth = math.max(1.5, cell * 0.035);
-    _ringPaint.strokeWidth = math.max(1.5, cell * 0.035);
+    _ringTrackPaint.strokeWidth = math.max(2, cell * _ringStroke);
+    _ringPaint.strokeWidth = math.max(2, cell * _ringStroke);
+  }
+
+  /// Bakes the exit's glowing outline for exits of [size] (all exits share
+  /// one size), only when that size or the pixel ratio changes.
+  void _bakeExitGlow(Size size, double cell, double dpr) {
+    if (size == _exitGlowSize && dpr == _exitGlowDpr && _exitGlow != null) {
+      return;
+    }
+    _exitGlowSize = size;
+    _exitGlowDpr = dpr;
+    _exitGlow?.dispose();
+    _exitGlowBakes++;
+    final stroke = cell * 0.08;
+    final sigma = cell * 0.08;
+    final margin = stroke / 2 + sigma * 3 + 1;
+    final pw = math.max(1, ((size.width + margin * 2) * dpr).ceil());
+    final ph = math.max(1, ((size.height + margin * 2) * dpr).ceil());
+    final recorder = PictureRecorder();
+    Canvas(recorder)
+      ..scale(dpr)
+      ..drawRect(
+        Rect.fromLTWH(margin, margin, size.width, size.height),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..color = palette.exit
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma),
+      );
+    final picture = recorder.endRecording();
+    _exitGlow = picture.toImageSync(pw, ph);
+    picture.dispose();
+    _exitGlowSrc = Rect.fromLTWH(0, 0, pw.toDouble(), ph.toDouble());
+    _exitGlowMargin = margin;
   }
 
   @override
@@ -360,10 +414,20 @@ class EchoBoard extends FlameGame {
 
     _layer.draw(canvas);
 
-    // Exit glow pulses over the cached frame.
-    _exitGlowPaint.color = _exitRamp.at(0.15 + 0.4 * _fx.exitPulse.value);
-    for (final r in _layer.exitRects) {
-      canvas.drawRect(r, _exitGlowPaint);
+    // Exit glow pulses over the cached frame: a baked image whose alpha
+    // follows the pulse.
+    final exits = _layer.exitRects;
+    if (exits.isNotEmpty) {
+      _bakeExitGlow(exits.first.size, cell, dpr);
+      _exitGlowPaint.color = _whiteRamp.at(0.15 + 0.4 * _fx.exitPulse.value);
+      for (final r in exits) {
+        canvas.drawImageRect(
+          _exitGlow!,
+          _exitGlowSrc,
+          r.inflate(_exitGlowMargin),
+          _exitGlowPaint,
+        );
+      }
     }
 
     _drawPlates(canvas, cell);
@@ -595,7 +659,7 @@ class EchoBoard extends FlameGame {
         : palette.batteryLowDim;
     canvas
       ..save()
-      ..translate(pip.dx, pip.dy - cell * 0.62)
+      ..translate(pip.dx, pip.dy - cell * 0.72)
       ..drawOval(_layer.ringRect, _ringTrackPaint);
     if (left > 0) {
       canvas.drawArc(
