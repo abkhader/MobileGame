@@ -55,6 +55,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _tipShown = false;
   bool _tipVisible = false;
   Timer? _tipTimer;
+  // Latched by the first beat: the 1-01 thumb hint never comes back.
+  bool _moved = false;
 
   @visibleForTesting
   GameController? get controllerForTesting => _controller;
@@ -121,6 +123,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _winTimer?.cancel();
       _winTimer = null;
     }
+    if (c.state.tick > 0 || c.state.runIndex > 0) _moved = true;
     if (c.lastEvent == GameEvent.runEnded) _onRewound();
     _syncHint();
     setState(() {});
@@ -226,14 +229,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     unawaited(widget.services.audio.setRewinding(rewinding).catchError((_) {}));
   }
 
-  /// Points the board's hint dots at the current run of the best solution.
+  /// Points the board's hint at the next four beats of the best solution.
   void _syncHint() {
     final c = _controller;
     final board = _board;
     if (c == null || board == null) return;
-    board.hintPath = _hintUnlocked
-        ? HintService.pathFor(c.level, c.state.runIndex)
+    final beats = _hintUnlocked
+        ? HintService.nextBeats(c.level, c.state)
         : null;
+    board.hintSteps = beats == null
+        ? null
+        : HintService.stepsFor(c.state, beats);
   }
 
   void _showNoAd() {
@@ -479,6 +485,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ],
+              if (!reduce && c.level.id == '1-01' && !_moved)
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: _ThumbHint(key: Key('thumb-hint')),
+                    ),
+                  ),
+                ),
               if (_tipShown)
                 Positioned(
                   top: 8,
@@ -687,6 +701,64 @@ class _BandPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BandPainter old) => old.progress != progress;
+}
+
+/// A translucent thumb dragging right over the lower half, looping. It runs
+/// while time is frozen, so it is one controller and one small painter; it
+/// is removed (and disposed) at the first beat.
+class _ThumbHint extends StatefulWidget {
+  const _ThumbHint({super.key});
+
+  @override
+  State<_ThumbHint> createState() => _ThumbHintState();
+}
+
+class _ThumbHintState extends State<_ThumbHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.infinite, painter: _ThumbPainter(_controller));
+}
+
+class _ThumbPainter extends CustomPainter {
+  _ThumbPainter(this.progress) : super(repaint: progress);
+
+  final Animation<double> progress;
+
+  static final _fill = Paint();
+  static final _line = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..strokeWidth = 4;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = progress.value;
+    // Press, drag right, lift: fade in over the first fifth, out over the last.
+    final drag = Curves.easeInOut.transform((t / 0.8).clamp(0.0, 1.0));
+    final fade = t < 0.2 ? t / 0.2 : (t > 0.8 ? (1 - t) / 0.2 : 1.0);
+    final y = size.height * 0.75;
+    final x0 = size.width * 0.3;
+    final x = x0 + size.width * 0.4 * drag;
+    _line.color = Color.fromRGBO(255, 255, 255, 0.25 * fade);
+    canvas.drawLine(Offset(x0, y), Offset(x, y), _line);
+    _fill.color = Color.fromRGBO(255, 255, 255, 0.4 * fade);
+    canvas.drawCircle(Offset(x, y), 26, _fill);
+  }
+
+  @override
+  bool shouldRepaint(_ThumbPainter old) => old.progress != progress;
 }
 
 /// The board's input layer: the floating joystick over the Flame board.

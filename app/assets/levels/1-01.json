@@ -2,7 +2,7 @@
   "id": "1-01",
   "name": "First Step",
   "runLimit": 1,
-  "tip": "Swipe to move Pip. Find the way out.",
+  "tip": "Drag anywhere to move Pip.",
   "grid": [
     "#######",
     "#S...E#",

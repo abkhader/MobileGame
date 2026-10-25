@@ -84,7 +84,7 @@ void main() {
     expect(find.bySemanticsLabel('Battery, 25 moves left'), findsOneWidget);
     expect(
       find.text(
-        'Tap Rewind. Pip goes back to the start, and your echo repeats every move.',
+        'Tap New echo. Pip starts over, and your echo repeats every move.',
       ),
       findsOneWidget,
     );

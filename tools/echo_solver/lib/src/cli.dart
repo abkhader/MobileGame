@@ -12,7 +12,7 @@ const _usage =
 
 /// Allowed `runLimit` range (inclusive) per chapter.
 final _levelId = RegExp(r'^[1-3]-(0[1-9]|10)$');
-const _tipIds = {'1-01', '1-02', '1-03'};
+const _tipIds = {'1-01', '1-02', '1-03', '1-04'};
 const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4)};
 
 /// Runs the solver CLI and returns the process exit code.
@@ -201,7 +201,7 @@ String? _qualityFailure(
     return 'runLimit $runs outside chapter $chapter range $lo\u2013$hi';
   }
   if (level.tip != null && !_tipIds.contains(level.id)) {
-    return 'tip only allowed on levels 1-01 to 1-03';
+    return 'tip only allowed on levels 1-01 to 1-04';
   }
   if (runs > 1) {
     final reduced = LevelLoader.fromMap(

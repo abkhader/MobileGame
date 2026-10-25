@@ -222,14 +222,24 @@ void main() {
       }
     });
 
-    test('a tip on a level other than 1-01 to 1-03 fails', () async {
+    test('a tip on a level other than 1-01 to 1-04 fails', () async {
+      put(
+        '1-05.json',
+        level('1-05', ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
+      );
+      final (code, out) = await run(['--write']);
+      expect(code, 1);
+      expect(out, '1-05.json: FAIL tip only allowed on levels 1-01 to 1-04\n');
+    });
+
+    test('a tip on 1-04 passes', () async {
       put(
         '1-04.json',
         level('1-04', ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
       );
       final (code, out) = await run(['--write']);
-      expect(code, 1);
-      expect(out, '1-04.json: FAIL tip only allowed on levels 1-01 to 1-03\n');
+      expect(code, 0);
+      expect(out, '1-04.json: OK (best 4)\n');
     });
 
     test('a tip on 1-01 to 1-03 passes', () async {

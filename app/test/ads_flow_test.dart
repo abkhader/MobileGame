@@ -5,7 +5,6 @@ import 'package:echo_app/data/level_repository.dart';
 import 'package:echo_app/data/progress_repository.dart';
 import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/game/echo_board.dart';
-import 'package:echo_app/hints/hint_service.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_app/screens/home_screen.dart';
 import 'package:echo_app/screens/level_complete_screen.dart';
@@ -98,7 +97,7 @@ void main() {
     await t.pump(_frame);
     expect(find.text(_noAd), findsOneWidget);
     expect(ads.rewardedShown, 1);
-    expect(_echoBoard(t).hintPath, isNull);
+    expect(_echoBoard(t).hintSteps, isNull);
   });
 
   testWidgets('Hint with a rewarded ad sets the path', (t) async {
@@ -106,8 +105,8 @@ void main() {
     await _pumpGame(t, await _services(t, ads), '1-01');
     await t.tap(find.text('Hint'));
     await t.pump(_frame);
-    expect(_echoBoard(t).hintPath, isNotNull);
-    expect(_echoBoard(t).hintPath!.length, 5);
+    expect(_echoBoard(t).hintSteps, isNotNull);
+    expect(_echoBoard(t).hintSteps!.length, 4);
     expect(find.text(_noAd), findsNothing);
   });
 
@@ -179,16 +178,16 @@ void main() {
   testWidgets('hint path refreshes when the run changes', (t) async {
     final services = await _services(t, FakeAdService());
     await _pumpGame(t, services, '1-03');
-    final level = (await t.runAsync(() => services.levels.load('1-03')))!;
     await t.tap(find.text('Hint'));
     await t.pump(_frame);
-    expect(_echoBoard(t).hintPath, HintService.pathFor(level, 0));
+    expect(_echoBoard(t).hintSteps!.map((e) => e.move), [Move.right]);
     await tapKey(t, LogicalKeyboardKey.arrowRight);
     await t.tap(find.text('New echo · 1 left'));
     await t.pump(_frame);
     expect(find.bySemanticsLabel('Run 2 of 2'), findsOneWidget);
-    expect(_echoBoard(t).hintPath, HintService.pathFor(level, 1));
-    expect(_echoBoard(t).hintPath!.last, const Position(5, 1));
+    final steps = _echoBoard(t).hintSteps!;
+    expect(steps, hasLength(4));
+    expect(steps.last.to, const Position(5, 1));
   });
 
   testWidgets('hint survives Restart and the mismatch note follows ghosts', (
@@ -208,7 +207,7 @@ void main() {
     await t.pump(_frame);
     expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
     expect(find.text(note), findsNothing);
-    expect(_echoBoard(t).hintPath, isNotNull);
+    expect(_echoBoard(t).hintSteps, isNotNull);
   });
 
   testWidgets('Skip on the last level returns to the existing map', (t) async {

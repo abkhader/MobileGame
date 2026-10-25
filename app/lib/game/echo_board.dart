@@ -6,6 +6,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart';
 
 import '../art/pip.dart';
+import '../hints/hint_service.dart';
 import 'board_effects.dart';
 import 'board_layout.dart';
 import 'board_static_layer.dart';
@@ -35,12 +36,13 @@ class EchoBoard extends FlameGame {
 
   GameController get controller => flow.game;
 
-  List<Position>? _hintPath;
+  List<HintStep>? _hintSteps;
 
-  /// Cells to mark as a suggested route; null hides it.
-  List<Position>? get hintPath => _hintPath;
-  set hintPath(List<Position>? value) {
-    _hintPath = value;
+  /// The next beats of the suggested route; null or empty hides it. Drawn
+  /// statically: setting it repaints once, nothing animates while frozen.
+  List<HintStep>? get hintSteps => _hintSteps;
+  set hintSteps(List<HintStep>? value) {
+    _hintSteps = value;
     wake();
   }
 
@@ -65,7 +67,13 @@ class EchoBoard extends FlameGame {
   final _platePaint = Paint();
   final _ripplePaint = Paint()..style = PaintingStyle.stroke;
   final _doorPaint = Paint();
-  final _hintPaint = Paint()..color = palette.player.withValues(alpha: 0.4);
+  final _hintRamp = AlphaRamp(palette.player);
+  final _hintPaint = Paint();
+  final _hintGlowPaint = Paint();
+  final _hintLinePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round;
+  final _hintShape = Path();
   final _trailPaint = Paint()
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round
@@ -361,12 +369,8 @@ class EchoBoard extends FlameGame {
     _drawPlates(canvas, cell);
     _drawDoors(canvas);
 
-    final hint = _hintPath;
-    if (hint != null) {
-      for (final p in hint) {
-        canvas.drawCircle(layout.centerOf(p), cell * 0.08, _hintPaint);
-      }
-    }
+    final hint = _hintSteps;
+    if (hint != null && hint.isNotEmpty) _drawHint(canvas, layout, hint, cell);
 
     // Echoes: trail, translucent flickering body, shimmer on arrival.
     for (var i = 0; i < _ghostTiles.length; i++) {
@@ -407,6 +411,97 @@ class EchoBoard extends FlameGame {
       _flashPaint.color = _exitRamp.at(light);
       canvas.drawRect(_layer.bounds, _flashPaint);
     }
+  }
+
+  /// A glowing dotted path; a push is an arrow against the obstacle and a
+  /// wait an hourglass. Later beats are fainter. Static: no animation.
+  void _drawHint(
+    Canvas canvas,
+    BoardLayout layout,
+    List<HintStep> steps,
+    double cell,
+  ) {
+    _hintLinePaint.strokeWidth = cell * 0.07;
+    final stacked = <Position, int>{};
+    for (var i = 0; i < steps.length; i++) {
+      final step = steps[i];
+      final a = 1.0 - 0.18 * i;
+      final from = layout.centerOf(step.from);
+      if (step.move == Move.wait) {
+        final n = stacked[step.from] = (stacked[step.from] ?? 0) + 1;
+        _drawHourglass(
+          canvas,
+          from + Offset(cell * 0.3, -cell * 0.3 - (n - 1) * cell * 0.2),
+          cell * 0.11,
+          a,
+        );
+      } else if (step.blocked) {
+        final n = stacked[step.from] = (stacked[step.from] ?? 0) + 1;
+        _drawPushArrow(canvas, from, step.move, cell, a, n - 1);
+      } else {
+        final to = layout.centerOf(step.to);
+        _hintPaint.color = _hintRamp.at(0.55 * a);
+        _hintGlowPaint.color = _hintRamp.at(0.25 * a);
+        for (final k in const [0.25, 0.5, 0.75]) {
+          canvas.drawCircle(Offset.lerp(from, to, k)!, cell * 0.04, _hintPaint);
+        }
+        canvas.drawCircle(to, cell * 0.2, _hintGlowPaint);
+        canvas.drawCircle(to, cell * 0.09, _hintPaint);
+      }
+    }
+  }
+
+  void _drawPushArrow(
+    Canvas canvas,
+    Offset from,
+    Move dir,
+    double cell,
+    double a,
+    int n,
+  ) {
+    final (dx, dy) = switch (dir) {
+      Move.up => (0.0, -1.0),
+      Move.down => (0.0, 1.0),
+      Move.left => (-1.0, 0.0),
+      _ => (1.0, 0.0),
+    };
+    // Tail near Pip, head at the tile edge: it presses on the obstacle.
+    final d = Offset(dx, dy);
+    final side = Offset(-dy, dx);
+    final off = side * (cell * 0.12 * n);
+    final tail = from + d * (cell * 0.22) + off;
+    final head = from + d * (cell * 0.46) + off;
+    _hintLinePaint.color = _hintRamp.at(0.8 * a);
+    canvas.drawLine(tail, head, _hintLinePaint);
+    _hintShape
+      ..reset()
+      ..moveTo(head.dx, head.dy)
+      ..lineTo(
+        head.dx - d.dx * cell * 0.14 + side.dx * cell * 0.1,
+        head.dy - d.dy * cell * 0.14 + side.dy * cell * 0.1,
+      )
+      ..lineTo(
+        head.dx - d.dx * cell * 0.14 - side.dx * cell * 0.1,
+        head.dy - d.dy * cell * 0.14 - side.dy * cell * 0.1,
+      )
+      ..close();
+    _hintPaint.color = _hintRamp.at(0.8 * a);
+    canvas.drawPath(_hintShape, _hintPaint);
+  }
+
+  /// Two triangles tip to tip: the wait marker.
+  void _drawHourglass(Canvas canvas, Offset c, double r, double a) {
+    _hintShape
+      ..reset()
+      ..moveTo(c.dx - r, c.dy - r * 1.4)
+      ..lineTo(c.dx + r, c.dy - r * 1.4)
+      ..lineTo(c.dx, c.dy)
+      ..lineTo(c.dx + r, c.dy + r * 1.4)
+      ..lineTo(c.dx - r, c.dy + r * 1.4)
+      ..lineTo(c.dx, c.dy)
+      ..close();
+    _hintPaint.color = _hintRamp.at(0.85 * a);
+    canvas.drawPath(_hintShape, _hintPaint);
   }
 
   void _drawPlates(Canvas canvas, double cell) {

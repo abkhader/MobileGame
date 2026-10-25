@@ -48,4 +48,61 @@ class HintService {
     }
     return true;
   }
+
+  /// The next [count] moves of the stored solution's current run, from the
+  /// player's tick, while the ghosts match the solution and the current run
+  /// is its prefix; null otherwise. Moves are returned as stored: a blocked
+  /// move is a push the echo records, not a wait.
+  static List<Move>? nextBeats(Level level, GameState s, {int count = 4}) {
+    final solution = level.solution;
+    if (solution == null ||
+        s.status != GameStatus.playing ||
+        s.runIndex >= solution.length ||
+        !matchesSolution(level, s)) {
+      return null;
+    }
+    final run = solution[s.runIndex];
+    final done = s.currentRun;
+    if (done.length != s.tick || done.length > run.length) return null;
+    for (var i = 0; i < done.length; i++) {
+      if (done[i] != run[i]) return null;
+    }
+    return run.skip(done.length).take(count).toList();
+  }
+
+  /// Plays [beats] from [s] to say where each one goes and which are pushes.
+  static List<HintStep> stepsFor(GameState s, List<Move> beats) {
+    final steps = <HintStep>[];
+    var state = s;
+    for (final m in beats) {
+      final next = Rules.step(state, m);
+      if (next.runIndex != state.runIndex) break;
+      steps.add(
+        HintStep(
+          move: m,
+          from: state.player,
+          to: next.player,
+          blocked: m != Move.wait && next.player == state.player,
+        ),
+      );
+      if (next.status != GameStatus.playing) break;
+      state = next;
+    }
+    return steps;
+  }
+}
+
+/// One hinted beat: [blocked] means a push against an obstacle.
+class HintStep {
+  const HintStep({
+    required this.move,
+    required this.from,
+    required this.to,
+    required this.blocked,
+  });
+
+  final Move move;
+  final Position from;
+  final Position to;
+  final bool blocked;
 }
