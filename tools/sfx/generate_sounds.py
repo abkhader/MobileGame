@@ -74,6 +74,33 @@ def win():
     return out
 
 
+def bump():
+    # A soft, short "push" tick: low thump with a quiet overtone.
+    n = seconds(0.055)
+    out = [
+        (0.55 * sine(150, i) + 0.2 * sine(300, i))
+        * math.exp(-55 * i / RATE)
+        for i in range(n)
+    ]
+    return fade(out, 0.002, 0.012)
+
+
+def rewind():
+    # A rising 0.6 s sweep, 300 -> 900 Hz. The mean frequency (600 Hz) over
+    # 0.6 s is a whole number of cycles, and the swell starts and ends at the
+    # same level, so the loop is seamless.
+    n = seconds(0.6)
+    t_total = n / RATE
+    f0, f1 = 300.0, 900.0
+    out = []
+    for i in range(n):
+        t = i / RATE
+        phase = 2 * math.pi * (f0 * t + (f1 - f0) * t * t / (2 * t_total))
+        swell = 0.7 + 0.3 * math.sin(2 * math.pi * t / t_total)
+        out.append(0.3 * swell * (math.sin(phase) + 0.3 * math.sin(2 * phase)))
+    return out
+
+
 def ambient():
     n = seconds(16)
     rng = random.Random(7)
@@ -113,6 +140,8 @@ def main():
     write('door', door())
     write('run_end', run_end())
     write('win', win())
+    write('bump', bump())
+    write('rewind', rewind())
     write('ambient', ambient())
 
 

@@ -6,6 +6,8 @@ class FakeAudioService implements AudioService {
 
   final bool throws;
   final List<Sfx> played = [];
+  final List<bool> frozenCalls = [];
+  final List<bool> rewindingCalls = [];
   int startMusicCalls = 0;
   int stopMusicCalls = 0;
 
@@ -25,5 +27,17 @@ class FakeAudioService implements AudioService {
   Future<void> stopMusic() async {
     stopMusicCalls++;
     if (throws) throw StateError('stopMusic failed');
+  }
+
+  @override
+  Future<void> setFrozen(bool frozen) async {
+    frozenCalls.add(frozen);
+    if (throws) throw StateError('setFrozen failed');
+  }
+
+  @override
+  Future<void> setRewinding(bool rewinding) async {
+    rewindingCalls.add(rewinding);
+    if (throws) throw StateError('setRewinding failed');
   }
 }

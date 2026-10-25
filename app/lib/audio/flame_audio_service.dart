@@ -12,6 +12,7 @@ class FlameAudioService implements AudioService {
     Sfx.door: 'door.wav',
     Sfx.runEnd: 'run_end.wav',
     Sfx.win: 'win.wav',
+    Sfx.bump: 'bump.wav',
   };
 
   Future<void>? _preload;
@@ -19,11 +20,22 @@ class FlameAudioService implements AudioService {
   Future<AudioPool>? _movePool;
   bool _bgmInitialized = false;
   bool _wanted = false;
+  bool _frozen = false;
+  bool _rewindWanted = false;
+  int _rewindGen = 0;
+  Future<void> Function()? _stopRewind;
+
+  static const _musicVolume = 0.5;
+
+  /// Music plays at 40 % of its volume while time is frozen.
+  static const _duck = 0.4;
+
+  double get _targetVolume => _frozen ? _musicVolume * _duck : _musicVolume;
 
   /// One shared load; a failure clears it so the next call retries.
   Future<void> _ensureLoaded() {
     return _preload ??= FlameAudio.audioCache
-        .loadAll([..._files.values, 'ambient.wav'])
+        .loadAll([..._files.values, 'ambient.wav', 'rewind.wav'])
         .then<void>((_) {
           _loaded = true;
         })
@@ -69,7 +81,7 @@ class FlameAudioService implements AudioService {
         _bgmInitialized = true;
       }
       if (!_wanted || FlameAudio.bgm.isPlaying) return;
-      await FlameAudio.bgm.play('ambient.wav', volume: 0.5);
+      await FlameAudio.bgm.play('ambient.wav', volume: _targetVolume);
       if (!_wanted) await FlameAudio.bgm.stop();
     } catch (_) {}
   }
@@ -79,6 +91,44 @@ class FlameAudioService implements AudioService {
     _wanted = false;
     try {
       await FlameAudio.bgm.stop();
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> setFrozen(bool frozen) async {
+    _frozen = frozen;
+    try {
+      if (_bgmInitialized) {
+        await FlameAudio.bgm.audioPlayer.setVolume(_targetVolume);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> setRewinding(bool rewinding) async {
+    _rewindWanted = rewinding;
+    final gen = ++_rewindGen;
+    try {
+      if (!rewinding) {
+        final stop = _stopRewind;
+        _stopRewind = null;
+        await stop?.call();
+        return;
+      }
+      if (_stopRewind != null) return;
+      if (!_loaded) await _ensureLoaded();
+      final player = await FlameAudio.loop('rewind.wav', volume: 0.6);
+      Future<void> stop() async {
+        await player.stop();
+        await player.dispose();
+      }
+
+      // Released while the loop was starting, or started again meanwhile.
+      if (!_rewindWanted || gen != _rewindGen) {
+        await stop();
+        return;
+      }
+      _stopRewind = stop;
     } catch (_) {}
   }
 }

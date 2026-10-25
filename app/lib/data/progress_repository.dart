@@ -24,6 +24,8 @@ class ProgressRepository extends ChangeNotifier {
     this._endingSeen,
     this._rewindTipsShown,
     this._moveSpeed,
+    this._reduceEffects,
+    this._vibration,
   );
 
   static const storageKey = 'echo.progress.v1';
@@ -37,6 +39,8 @@ class ProgressRepository extends ChangeNotifier {
   bool _endingSeen;
   int _rewindTipsShown;
   MoveSpeed _moveSpeed;
+  bool _reduceEffects;
+  bool _vibration;
 
   static Future<ProgressRepository> open() async {
     final prefs = await SharedPreferences.getInstance();
@@ -47,6 +51,8 @@ class ProgressRepository extends ChangeNotifier {
     var endingSeen = false;
     var rewindTipsShown = 0;
     var moveSpeed = MoveSpeed.normal;
+    var reduceEffects = false;
+    var vibration = true;
     try {
       final raw = prefs.getString(storageKey);
       if (raw != null) {
@@ -77,6 +83,12 @@ class ProgressRepository extends ChangeNotifier {
               orElse: () => MoveSpeed.normal,
             );
           }
+          if (decoded['reduceEffects'] is bool) {
+            reduceEffects = decoded['reduceEffects'] as bool;
+          }
+          if (decoded['vibration'] is bool) {
+            vibration = decoded['vibration'] as bool;
+          }
         }
       }
     } catch (_) {
@@ -87,6 +99,8 @@ class ProgressRepository extends ChangeNotifier {
       endingSeen = false;
       rewindTipsShown = 0;
       moveSpeed = MoveSpeed.normal;
+      reduceEffects = false;
+      vibration = true;
     }
     return ProgressRepository._(
       prefs,
@@ -97,6 +111,8 @@ class ProgressRepository extends ChangeNotifier {
       endingSeen,
       rewindTipsShown,
       moveSpeed,
+      reduceEffects,
+      vibration,
     );
   }
 
@@ -104,6 +120,12 @@ class ProgressRepository extends ChangeNotifier {
   bool get sfxOn => _sfxOn;
   bool get endingSeen => _endingSeen;
   MoveSpeed get moveSpeed => _moveSpeed;
+
+  /// No trails, shimmer, tilt/squash or tint (motion stays).
+  bool get reduceEffects => _reduceEffects;
+
+  /// Haptic feedback on push, plate and win.
+  bool get vibration => _vibration;
 
   /// How many times the first-rewind tip has been shown (it stops at 2).
   int get rewindTipsShown => _rewindTipsShown;
@@ -151,6 +173,16 @@ class ProgressRepository extends ChangeNotifier {
     return _save();
   }
 
+  Future<void> setReduceEffects(bool value) {
+    _reduceEffects = value;
+    return _save();
+  }
+
+  Future<void> setVibration(bool value) {
+    _vibration = value;
+    return _save();
+  }
+
   Future<void> markChapterIntroSeen(int chapter) {
     _seenChapters.add(chapter);
     return _save();
@@ -177,6 +209,8 @@ class ProgressRepository extends ChangeNotifier {
       'endingSeen': _endingSeen,
       'rewindTipsShown': _rewindTipsShown,
       'moveSpeed': _moveSpeed.name,
+      'reduceEffects': _reduceEffects,
+      'vibration': _vibration,
     });
     await _prefs.setString(storageKey, json);
     notifyListeners();

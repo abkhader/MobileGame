@@ -20,6 +20,8 @@ class FlowController extends ChangeNotifier {
 
   final ValueNotifier<int> _bumps = ValueNotifier(0);
   final ValueNotifier<Move?> _bumpDir = ValueNotifier(null);
+  final ValueNotifier<bool> _frozenN = ValueNotifier(true);
+  final ValueNotifier<bool> _rewinding = ValueNotifier(false);
   GameState? _from;
 
   /// Increments on each bump.
@@ -35,6 +37,18 @@ class FlowController extends ChangeNotifier {
 
   bool get frozen => !clock.running;
 
+  /// Changes only when time freezes or flows again.
+  ValueListenable<bool> get frozenListenable => _frozenN;
+
+  /// True while a rewind input is held and time is running backwards.
+  ValueListenable<bool> get rewinding => _rewinding;
+
+  void _syncFeel() {
+    _frozenN.value = frozen;
+    _rewinding.value =
+        clock.running && _top != null && _top!.$1 == IntentKind.rewind;
+  }
+
   final List<(InputSource, IntentKind, Move?)> _held = [];
 
   /// Held inputs, oldest first, one per source and kind. The last one drives
@@ -43,7 +57,10 @@ class FlowController extends ChangeNotifier {
 
   /// Low level: sets the clock's intent directly. Inputs use [press] and
   /// [release] so two thumbs (or keys) arbitrate.
-  void setIntent(IntentKind kind, [Move? dir]) => clock.setIntent(kind, dir);
+  void setIntent(IntentKind kind, [Move? dir]) {
+    clock.setIntent(kind, dir);
+    _syncFeel();
+  }
 
   /// An input of [kind] from [source] went down (or a held move changed
   /// direction). The latest press wins.
@@ -58,6 +75,7 @@ class FlowController extends ChangeNotifier {
       ..removeWhere((e) => e.$1 == source && e.$2 == kind)
       ..add((source, kind, kind == IntentKind.move ? dir : null));
     if (_top != before) _applyTop();
+    _syncFeel();
   }
 
   /// The input of [kind] from [source] was let go: the previous held input,
@@ -66,6 +84,7 @@ class FlowController extends ChangeNotifier {
     final before = _top;
     _held.removeWhere((e) => e.$1 == source && e.$2 == kind);
     if (_top != before) _applyTop();
+    _syncFeel();
   }
 
   /// Lets go of everything [source] holds, e.g. keys when focus leaves.
@@ -73,12 +92,14 @@ class FlowController extends ChangeNotifier {
     final before = _top;
     _held.removeWhere((e) => e.$1 == source);
     if (_top != before) _applyTop();
+    _syncFeel();
   }
 
   /// Forgets every held input, e.g. when the app goes to the background.
   void releaseAll() {
     _held.clear();
     clock.setIntent(IntentKind.none);
+    _syncFeel();
   }
 
   /// The winning intent; sources do not matter for the clock.
@@ -94,7 +115,10 @@ class FlowController extends ChangeNotifier {
     }
   }
 
-  void advance(double dt) => clock.advance(dt);
+  void advance(double dt) {
+    clock.advance(dt);
+    _syncFeel();
+  }
 
   void _onBeat(IntentKind kind, Move? dir) {
     switch (kind) {
@@ -117,6 +141,7 @@ class FlowController extends ChangeNotifier {
           notifyListeners();
         } else {
           clock.stop();
+          _syncFeel();
           notifyListeners();
         }
     }
@@ -134,6 +159,7 @@ class FlowController extends ChangeNotifier {
     switch (game.lastEvent) {
       case GameEvent.runEnded || GameEvent.won || GameEvent.lost:
         clock.stop();
+        _syncFeel();
         _from = game.previous;
       case GameEvent.restarted:
         // Nothing to glide from: the level starts over.
@@ -149,6 +175,8 @@ class FlowController extends ChangeNotifier {
     clock.stop();
     _bumps.dispose();
     _bumpDir.dispose();
+    _frozenN.dispose();
+    _rewinding.dispose();
     super.dispose();
   }
 }

@@ -124,6 +124,14 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   MoveSpeed get moveSpeed => _inner.moveSpeed;
   @override
   Future<void> setMoveSpeed(MoveSpeed value) => _inner.setMoveSpeed(value);
+  @override
+  bool get reduceEffects => _inner.reduceEffects;
+  @override
+  Future<void> setReduceEffects(bool value) => _inner.setReduceEffects(value);
+  @override
+  bool get vibration => _inner.vibration;
+  @override
+  Future<void> setVibration(bool value) => _inner.setVibration(value);
 }
 
 /// Waits for the real-async asset loads behind a tap, then pumps a few frames.

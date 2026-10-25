@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../art/pip.dart';
+import '../audio/audio_service.dart';
 import '../audio/game_sounds.dart';
 import '../game/echo_board.dart';
 import '../game/floating_joystick.dart';
@@ -13,6 +14,7 @@ import '../game/flow_controller.dart';
 import '../game/flow_keys.dart';
 import '../game/game_clock.dart';
 import '../game/game_controller.dart';
+import '../game/haptics.dart';
 import '../game/hold_button.dart';
 import '../game/palette.dart' as palette;
 import '../hints/hint_service.dart';
@@ -81,6 +83,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         game: controller,
         speed: () => widget.services.progress.moveSpeed,
       );
+      flow.bumps.addListener(_onBump);
+      flow.frozenListenable.addListener(_onFrozen);
+      flow.rewinding.addListener(_onRewinding);
+      // Time starts frozen: the music ducks until the first input.
+      _onFrozen();
       setState(() {
         _controller = controller;
         _flow = flow;
@@ -175,10 +182,38 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final before = _lastState!;
     _lastState = c.state;
     final services = widget.services;
+    final sounds = soundsFor(before, c.state, c.lastEvent);
+    if (services.progress.vibration) {
+      if (c.lastEvent == GameEvent.won) {
+        Haptics.play(HapticKind.heavy);
+      } else if (sounds.contains(Sfx.plate)) {
+        Haptics.play(HapticKind.medium);
+      }
+    }
     if (!services.progress.sfxOn) return;
-    for (final sfx in soundsFor(before, c.state, c.lastEvent)) {
+    for (final sfx in sounds) {
       unawaited(services.audio.playSfx(sfx).catchError((_) {}));
     }
+  }
+
+  /// A push: a soft tick and a light buzz.
+  void _onBump() {
+    final services = widget.services;
+    if (services.progress.vibration) Haptics.play(HapticKind.light);
+    if (services.progress.sfxOn) {
+      unawaited(services.audio.playSfx(Sfx.bump).catchError((_) {}));
+    }
+  }
+
+  void _onFrozen() {
+    final frozen = _flow?.frozen ?? true;
+    unawaited(widget.services.audio.setFrozen(frozen).catchError((_) {}));
+  }
+
+  void _onRewinding() {
+    final rewinding = _flow?.rewinding.value ?? false;
+    if (rewinding && !widget.services.progress.sfxOn) return;
+    unawaited(widget.services.audio.setRewinding(rewinding).catchError((_) {}));
   }
 
   /// Points the board's hint dots at the current run of the best solution.
@@ -276,7 +311,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     _winTimer?.cancel();
     _tipTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _flow?.dispose();
+    final flow = _flow;
+    if (flow != null) {
+      flow.bumps.removeListener(_onBump);
+      flow.frozenListenable.removeListener(_onFrozen);
+      flow.rewinding.removeListener(_onRewinding);
+      // Leaving the screen restores the music and ends a held rewind sound.
+      final audio = widget.services.audio;
+      unawaited(audio.setFrozen(false).catchError((_) {}));
+      unawaited(audio.setRewinding(false).catchError((_) {}));
+    }
+    flow?.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -339,8 +384,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Widget _buildColumn(BuildContext context, GameController c) {
     final state = c.state;
-    // Task 5 adds a Reduce effects setting; until then follow the OS.
-    _board!.reduceEffects = MediaQuery.disableAnimationsOf(context);
+    final reduce =
+        widget.services.progress.reduceEffects ||
+        MediaQuery.disableAnimationsOf(context);
+    _board!.reduceEffects = reduce;
     final tip = c.level.tip;
     final textTheme = Theme.of(context).textTheme;
     return Column(
@@ -391,6 +438,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   child: GameWidget(game: _board!, autofocus: false),
                 ),
               ),
+              if (!reduce) ...[
+                // One fade, no animation of its own: free while static.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _flow!.frozenListenable,
+                      builder: (_, frozen, _) => AnimatedOpacity(
+                        opacity: frozen ? 1 : 0,
+                        duration: Duration(milliseconds: frozen ? 250 : 150),
+                        child: const ColoredBox(
+                          key: Key('frozen-tint'),
+                          color: _frozenTint,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Only built (and only painting) while rewinding.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _flow!.rewinding,
+                      builder: (_, rewinding, _) => rewinding
+                          ? const RepaintBoundary(
+                              child: _RewindShimmer(key: Key('rewind-shimmer')),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ],
               if (_tipShown)
                 Positioned(
                   top: 8,
@@ -506,6 +584,58 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// About 8 % soft blue.
+const _frozenTint = Color(0x143A6BFF);
+
+/// Scanlines with a slow band sweeping down; exists only while rewinding.
+class _RewindShimmer extends StatefulWidget {
+  const _RewindShimmer({super.key});
+
+  @override
+  State<_RewindShimmer> createState() => _RewindShimmerState();
+}
+
+class _RewindShimmerState extends State<_RewindShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.infinite, painter: _ShimmerPainter(_controller));
+}
+
+class _ShimmerPainter extends CustomPainter {
+  _ShimmerPainter(this.progress) : super(repaint: progress);
+
+  final Animation<double> progress;
+
+  static final _line = Paint()
+    ..color = const Color(0x1A9FC4FF)
+    ..strokeWidth = 1;
+  static final _band = Paint()..color = const Color(0x1F9FC4FF);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var y = 0.0; y < size.height; y += 4) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), _line);
+    }
+    final bandY = size.height * progress.value;
+    canvas.drawRect(Rect.fromLTWH(0, bandY - 24, size.width, 48), _band);
+  }
+
+  @override
+  bool shouldRepaint(_ShimmerPainter old) => old.progress != progress;
 }
 
 /// The board's input layer: the floating joystick over the Flame board.

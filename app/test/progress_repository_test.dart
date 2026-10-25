@@ -156,4 +156,31 @@ void main() {
     repo = await ProgressRepository.open();
     expect(repo.moveSpeed, MoveSpeed.normal);
   });
+
+  test(
+    'reduceEffects and vibration default, persist, old data loads',
+    () async {
+      var repo = await ProgressRepository.open();
+      expect(repo.reduceEffects, isFalse);
+      expect(repo.vibration, isTrue);
+      await repo.setReduceEffects(true);
+      await repo.setVibration(false);
+      repo = await ProgressRepository.open();
+      expect(repo.reduceEffects, isTrue);
+      expect(repo.vibration, isFalse);
+      SharedPreferences.setMockInitialValues({
+        key: '{"levels":{"1-01":{"stars":2}},"musicOn":false}',
+      });
+      repo = await ProgressRepository.open();
+      expect(repo.reduceEffects, isFalse);
+      expect(repo.vibration, isTrue);
+      expect(repo.progressOf('1-01').stars, 2);
+      SharedPreferences.setMockInitialValues({
+        key: '{"reduceEffects":"yes","vibration":1}',
+      });
+      repo = await ProgressRepository.open();
+      expect(repo.reduceEffects, isFalse);
+      expect(repo.vibration, isTrue);
+    },
+  );
 }
