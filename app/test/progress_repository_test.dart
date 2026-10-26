@@ -4,7 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const ids = ['1-01', '1-02', '1-03'];
+
+/// Old builds' key: read only to migrate when the v2 save is missing.
 const key = 'echo.progress.v1';
+const v2Key = 'echo.progress.v2';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -280,4 +283,78 @@ void main() {
       expect(repo.vibration, isTrue);
     },
   );
+  group('save key', () {
+    test('saves under echo.progress.v2', () {
+      expect(ProgressRepository.storageKey, v2Key);
+    });
+
+    test(
+      'a v1-only save migrates and is written to v2, v1 untouched',
+      () async {
+        const v1 =
+            '{"levels":{"1-01":{"stars":3},"1-02":{"stars":0}},'
+            '"musicOn":false}';
+        SharedPreferences.setMockInitialValues({key: v1});
+        final repo = await ProgressRepository.open();
+        expect(repo.progressOf('1-01').stars, 2);
+        expect(repo.progressOf('1-01').movesStar, isTrue);
+        expect(repo.progressOf('1-02').completed, isTrue);
+        expect(repo.musicOn, isFalse);
+        final prefs = await SharedPreferences.getInstance();
+        // Written to v2 straight away, so the migration is not redone later.
+        final saved = prefs.getString(v2Key);
+        expect(saved, isNotNull);
+        expect(saved, contains('"moves":true'));
+        expect(prefs.getString(key), v1);
+        await repo.recordWin('1-02', score: 4, best: 4, sparkMask: 5);
+        expect(prefs.getString(key), v1);
+      },
+    );
+
+    test('a v1 save in the new shape migrates too', () async {
+      SharedPreferences.setMockInitialValues({
+        key:
+            '{"levels":{"1-01":{"completed":true,"finished":true,'
+            '"sparks":7,"moves":true}}}',
+      });
+      final repo = await ProgressRepository.open();
+      expect(repo.progressOf('1-01').stars, 3);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(v2Key), contains('"sparks":7'));
+    });
+
+    test('when both keys exist, v2 wins', () async {
+      SharedPreferences.setMockInitialValues({
+        key: '{"levels":{"1-01":{"stars":1}},"musicOn":true}',
+        v2Key:
+            '{"levels":{"1-01":{"completed":true,"finished":true,'
+            '"sparks":3,"moves":true}},"musicOn":false}',
+      });
+      final repo = await ProgressRepository.open();
+      expect(repo.progressOf('1-01').sparkMask, 3);
+      expect(repo.progressOf('1-01').movesStar, isTrue);
+      expect(repo.musicOn, isFalse);
+    });
+
+    test('old v1 data written after a v2 save does not clobber it', () async {
+      var repo = await ProgressRepository.open();
+      await repo.recordWin('1-01', score: 4, best: 4, sparkMask: 7);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(key), isNull);
+      // An older preview build on the same URL writes its own v1 save.
+      await prefs.setString(key, '{"levels":{"1-01":{"stars":1}}}');
+      repo = await ProgressRepository.open();
+      expect(repo.progressOf('1-01').stars, 3);
+      expect(repo.progressOf('1-01').sparkMask, 7);
+    });
+
+    test('a corrupt v2 opens as defaults and ignores v1', () async {
+      SharedPreferences.setMockInitialValues({
+        key: '{"levels":{"1-01":{"stars":3}}}',
+        v2Key: '{oops',
+      });
+      final repo = await ProgressRepository.open();
+      expect(repo.progressOf('1-01').completed, isFalse);
+    });
+  });
 }

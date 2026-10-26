@@ -87,7 +87,14 @@ class ProgressRepository extends ChangeNotifier {
     this._vibration,
   );
 
-  static const storageKey = 'echo.progress.v1';
+  /// Every preview build is published to the same URL, so they share one
+  /// localStorage. Saves go under v2 only; an older build writing its own v1
+  /// save can then never overwrite this format.
+  static const storageKey = 'echo.progress.v2';
+
+  /// Older builds' key. Read only as the migration source when no v2 save
+  /// exists; never written.
+  static const legacyStorageKey = 'echo.progress.v1';
 
   final SharedPreferences _prefs;
   // Presence of a key means the level is completed.
@@ -112,8 +119,13 @@ class ProgressRepository extends ChangeNotifier {
     var moveSpeed = MoveSpeed.normal;
     var reduceEffects = false;
     var vibration = true;
+    var migrating = false;
     try {
-      final raw = prefs.getString(storageKey);
+      var raw = prefs.getString(storageKey);
+      if (raw == null) {
+        raw = prefs.getString(legacyStorageKey);
+        migrating = raw != null;
+      }
       if (raw != null) {
         final decoded = jsonDecode(raw);
         if (decoded is Map<String, dynamic>) {
@@ -160,7 +172,7 @@ class ProgressRepository extends ChangeNotifier {
       reduceEffects = false;
       vibration = true;
     }
-    return ProgressRepository._(
+    final repo = ProgressRepository._(
       prefs,
       saved,
       musicOn,
@@ -172,6 +184,9 @@ class ProgressRepository extends ChangeNotifier {
       reduceEffects,
       vibration,
     );
+    // Write the migrated data to v2 at once so it never depends on v1 again.
+    if (migrating) await repo._save();
+    return repo;
   }
 
   bool get musicOn => _musicOn;
