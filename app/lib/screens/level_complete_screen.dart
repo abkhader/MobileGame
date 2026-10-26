@@ -120,7 +120,10 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen>
         CurveTween(curve: Interval(start, end, curve: Curves.easeOutBack)),
       );
       final fade = controller.drive(CurveTween(curve: Interval(start, end)));
-      final reduce = widget.services.progress.reduceEffects;
+      // The in-game setting or the OS "reduce motion": fade only, no scale.
+      final reduce =
+          widget.services.progress.reduceEffects ||
+          MediaQuery.disableAnimationsOf(context);
       star = KeyedSubtree(
         key: ValueKey('goal-fly-$i'),
         child: FadeTransition(

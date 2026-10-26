@@ -40,10 +40,17 @@ Future<void> _pump(
   required LevelProgress after,
   int best = 16,
   bool reduce = false,
+  bool disableAnimations = false,
 }) async {
   final services = await _services(t, reduce: reduce);
   await t.pumpWidget(
     MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: disableAnimations),
+        child: child!,
+      ),
       home: LevelCompleteScreen(
         services: services,
         levelId: '1-02',
@@ -148,6 +155,27 @@ void main() {
 
   testWidgets('reduced effects fade the new star in with no scale', (t) async {
     await _pump(t, before: const LevelProgress(), after: _p(), reduce: true);
+    expect(_fly(0), findsOneWidget);
+    expect(
+      find.descendant(of: _fly(0), matching: find.byType(ScaleTransition)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: _fly(0), matching: find.byType(FadeTransition)),
+      findsOneWidget,
+    );
+    await t.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('OS reduce motion also fades the new star in with no scale', (
+    t,
+  ) async {
+    await _pump(
+      t,
+      before: const LevelProgress(),
+      after: _p(),
+      disableAnimations: true,
+    );
     expect(_fly(0), findsOneWidget);
     expect(
       find.descendant(of: _fly(0), matching: find.byType(ScaleTransition)),
