@@ -59,6 +59,9 @@ abstract final class LevelLoader {
     final starts = <Position>[];
     final exits = <Position>[];
     final sparks = <Position>[];
+    final lasers = <Position, int>{};
+    final cracked = <Position>{};
+    final shadeStarts = <Position>[];
 
     for (var y = 0; y < rows.length; y++) {
       final row = <Tile>[];
@@ -72,6 +75,15 @@ abstract final class LevelLoader {
             row.add(const Tile(TileKind.floor));
           case '*':
             sparks.add(p);
+            row.add(const Tile(TileKind.floor));
+          case '1' || '2' || '3':
+            lasers[p] = int.parse(ch);
+            row.add(const Tile(TileKind.floor));
+          case '~':
+            cracked.add(p);
+            row.add(const Tile(TileKind.floor));
+          case 'x':
+            shadeStarts.add(p);
             row.add(const Tile(TileKind.floor));
           case 'S':
             starts.add(p);
@@ -128,6 +140,9 @@ abstract final class LevelLoader {
       plates: plates,
       doors: doors,
       sparks: sparks,
+      lasers: lasers,
+      cracked: cracked,
+      shadeStarts: shadeStarts,
     );
   }
 

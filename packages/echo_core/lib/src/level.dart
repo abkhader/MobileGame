@@ -14,11 +14,17 @@ class Level {
     required Map<String, Position> plates,
     required Map<String, List<Position>> doors,
     required List<Position> sparks,
+    Map<Position, int> lasers = const {},
+    Set<Position> cracked = const {},
+    List<Position> shadeStarts = const [],
     this.tip,
     this.bestScore,
     List<List<Move>>? solution,
   }) : _grid = List.unmodifiable(grid.map(List<Tile>.unmodifiable)),
        sparks = List.unmodifiable(sparks),
+       lasers = Map.unmodifiable(lasers),
+       cracked = Set.unmodifiable(cracked),
+       shadeStarts = List.unmodifiable(shadeStarts),
        plates = Map.unmodifiable(plates),
        doors = Map.unmodifiable(
          doors.map((k, v) => MapEntry(k, List<Position>.unmodifiable(v))),
@@ -46,6 +52,18 @@ class Level {
 
   /// Spark positions (floor tiles) in reading order (row-major).
   final List<Position> sparks;
+
+  /// Laser tiles (floor that fires) mapped to their beat, 1, 2 or 3. See
+  /// `Rules.laserFires` for when each beat fires.
+  final Map<Position, int> lasers;
+
+  /// Cracked floor tiles. Each collapses into a hole once everyone has
+  /// stepped off it (see `Rules.collapse`); holes last for the rest of a run.
+  final Set<Position> cracked;
+
+  /// Shade start tiles (floor) in reading order (row-major). A Shade's index
+  /// in this list is its index in `GameState.shades`.
+  final List<Position> shadeStarts;
 
   final List<List<Tile>> _grid;
 

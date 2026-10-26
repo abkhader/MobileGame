@@ -72,6 +72,10 @@ void main() {
         completedTicks: run2.completedTicks,
         status: run2.status,
         collected: const {},
+        holes: run2.holes,
+        ghostAlive: run2.ghostAlive,
+        shades: run2.shades,
+        lastHits: run2.lastHits,
       );
       final after = Rules.step(s, Move.wait);
       expect(after.ghostPositions, [const Position(1, 0)]);
