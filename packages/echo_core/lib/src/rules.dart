@@ -22,8 +22,14 @@ abstract final class Rules {
   ///    live actor, using the same doors as step 1.
   /// 4. Hits ([isHit]): a hit ghost dies for the rest of the run. A hit Pip
   ///    ends the run exactly as [endRun] would at this tick (forced rewind,
-  ///    or lost on the last run); a hit beats reaching the exit.
+  ///    or lost on the last run); a hit beats reaching the exit. Then
+  ///    [collapseUnderDissolved]: a crack under an echo that just dissolved
+  ///    breaks unless a live actor still stands on it.
   /// 5. Doors are recomputed from the actors still standing.
+  ///
+  /// Actors are Pip and live ghosts. Shades are not actors: they press no
+  /// plates, hold no doors open (a door can close on a Shade, which can
+  /// still walk out) and keep no cracked floor up.
   ///
   /// A win on the final tick beats the tick cap.
   static GameState step(GameState s, Move m) {
@@ -87,11 +93,21 @@ abstract final class Rules {
         ? Hits(pip: pipHit, ghosts: ghostsHit)
         : Hits.none;
 
-    // 5. Doors from the actors still standing.
+    // Live actors not hit this beat. Shades are never actors: they press no
+    // plates, hold no doors open and keep no cracked floor up.
     final standing = [
       ..._live(ghostAlive, ghostPositions),
       if (!pipHit) player,
     ];
+
+    // 4b. A dissolving echo counts as leaving its tile.
+    final holesAfterHits = ghostsHit.isEmpty
+        ? holes
+        : collapseUnderDissolved(level, holes, [
+            for (final i in ghostsHit) ghostPositions[i],
+          ], standing);
+
+    // 5. Doors from the actors still standing.
 
     final next = GameState(
       level: level,
@@ -107,7 +123,7 @@ abstract final class Rules {
           ? GameStatus.won
           : GameStatus.playing,
       collected: collected,
-      holes: holes,
+      holes: holesAfterHits,
       ghostAlive: ghostAlive,
       shades: shades,
       lastHits: hits,
@@ -197,8 +213,9 @@ abstract final class Rules {
   /// Beat step 2. Returns [holes] plus every cracked tile, not already a
   /// hole, that was under at least one of [before] (live actors at the start
   /// of the beat) and is under none of [after] (the same actors after they
-  /// moved). Dead ghosts are not actors: a ghost dying on a crack does not
-  /// collapse it. Returns [holes] itself when nothing collapses.
+  /// moved). Dead ghosts are not actors; an echo dissolving on a crack is
+  /// handled after the hits by [collapseUnderDissolved]. Returns [holes]
+  /// itself when nothing collapses.
   static Set<Position> collapse(
     Level level,
     Set<Position> holes,
@@ -210,6 +227,33 @@ abstract final class Rules {
       if (level.cracked.contains(p) &&
           !holes.contains(p) &&
           !after.contains(p)) {
+        (result ??= {...holes}).add(p);
+      }
+    }
+    return result ?? holes;
+  }
+
+  /// Beat step 4b, after the hits: a dissolving echo counts as leaving its
+  /// tile. Returns [holes] plus every cracked tile, not already a hole, under
+  /// one of [dissolved] (echoes hit this beat) and under none of [standing]
+  /// (live actors not hit this beat). Returns [holes] itself when nothing
+  /// collapses.
+  ///
+  /// In [step] every hit is decided by tile, so a live actor sharing a
+  /// dissolving echo's tile is always hit too; [standing] only matters for
+  /// a hit Pip, whose run ends anyway. It is kept so the rule reads as
+  /// designed.
+  static Set<Position> collapseUnderDissolved(
+    Level level,
+    Set<Position> holes,
+    List<Position> dissolved,
+    List<Position> standing,
+  ) {
+    Set<Position>? result;
+    for (final p in dissolved) {
+      if (level.cracked.contains(p) &&
+          !holes.contains(p) &&
+          !standing.contains(p)) {
         (result ??= {...holes}).add(p);
       }
     }
@@ -348,7 +392,8 @@ abstract final class Rules {
   }
 
   /// Every door whose plate is under any of [actors], plus every door tile
-  /// with an actor on it (no crushing).
+  /// with an actor on it (no crushing). Shades are not actors and are never
+  /// passed here.
   static Set<Position> _openDoors(Level level, Iterable<Position> actors) {
     final open = <Position>{};
     for (final a in actors) {

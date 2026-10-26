@@ -456,6 +456,9 @@ void main() {
         plates: parsed.plates,
         doors: parsed.doors,
         sparks: sparks,
+        lasers: parsed.lasers,
+        cracked: parsed.cracked,
+        shadeStarts: parsed.shadeStarts,
       );
       // A plate, a door, the start, the exit and a wall.
       for (final p in const [

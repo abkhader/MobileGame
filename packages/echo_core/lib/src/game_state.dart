@@ -122,7 +122,8 @@ class GameState {
 
   /// Parallel to [ghosts]: false once that echo was hit. A dead echo stays
   /// where it was hit and no longer moves, presses plates, holds doors,
-  /// keeps cracked floor up or attracts Shades. All true at a run's start.
+  /// keeps cracked floor up (dissolving on a crack breaks it) or attracts
+  /// Shades. All true at a run's start.
   final List<bool> ghostAlive;
 
   /// Current Shade positions, parallel to `level.shadeStarts`. Reset to the

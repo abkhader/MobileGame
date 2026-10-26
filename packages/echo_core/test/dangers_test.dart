@@ -149,22 +149,50 @@ void main() {
       expect(s.ghostPositions, [_p(1, 0)]);
       expect(s.status, GameStatus.playing);
     });
-    test('ruling: an echo caught on a crack does not collapse it', () {
-      // Dissolving is not "stepping off": the tile was not left by a live
-      // actor, so it stays cracked until someone else steps on and off.
+    test('ruling: an echo dissolving on a crack breaks it that beat', () {
+      // A dissolving echo counts as leaving its tile: with no other live
+      // actor still standing there, the crack collapses after the hits.
       const g = ['S.~x', '.###', '...E'];
       var s = play(start(g, runLimit: 2), 'RR'); // Pip walks into the Shade
       expect((s.runIndex, s.ghosts.single.length), (1, 2));
       s = play(s, 'D');
       expect(s.shades, [_p(2, 0)]);
+      expect(s.holes, isEmpty);
       s = play(s, 'D'); // the ghost walks onto the crack and the Shade
       expect(s.ghostAlive, [false]);
       expect(s.ghostPositions, [_p(2, 0)]);
-      expect(s.holes, isEmpty);
+      expect(s.holes, {_p(2, 0)});
       s = play(s, 'R');
-      expect(s.holes, isEmpty);
+      expect(s.holes, {_p(2, 0)});
       expect(s.status, GameStatus.playing);
-      expect(s.shades, [_p(1, 0)]);
+      expect(s.shades, [_p(1, 0)], reason: 'Shades glide off the hole');
+    });
+    test('collapseUnderDissolved: a live actor still there holds it up', () {
+      // Every hit is decided by tile, so in Rules.step everyone live on a
+      // dissolving echo's tile is hit too (and a hit Pip ends the run).
+      // The "someone still stands there" case is pinned on the helper.
+      final l = lvl(['S~~.E']);
+      final crack = _p(1, 0);
+      expect(Rules.collapseUnderDissolved(l, const {}, [crack], const []), {
+        crack,
+      });
+      expect(
+        Rules.collapseUnderDissolved(l, const {}, [crack], [crack]),
+        isEmpty,
+        reason: 'a second live actor on the crack prevents the collapse',
+      );
+      expect(Rules.collapseUnderDissolved(l, const {}, [crack], [_p(2, 0)]), {
+        crack,
+      });
+      expect(
+        Rules.collapseUnderDissolved(l, {_p(2, 0)}, [_p(3, 0)], const []),
+        {_p(2, 0)},
+        reason: 'only cracked tiles collapse',
+      );
+      expect(
+        Rules.collapseUnderDissolved(l, const {}, const [], const []),
+        isEmpty,
+      );
     });
   });
 
@@ -204,6 +232,44 @@ void main() {
       expect(s.player, _p(0, 2));
       expect(s.shades, [_p(0, 0)], reason: 'a dead echo is not a target');
       expect(s.lastHits, Hits.none);
+    });
+  });
+
+  group('Shades are not actors', () {
+    test('a Shade standing on a plate opens nothing', () {
+      var s = play(start(['xa.S', '###A', '###E']), 'W');
+      expect(s.shades, [_p(1, 0)]);
+      expect(s.openDoors, isEmpty);
+      s = play(s, 'D'); // door A stays shut
+      expect(s.player, _p(3, 0));
+      expect(s.openDoors, isEmpty);
+    });
+    test('an echo hit on the beat it steps onto a plate opens nothing', () {
+      const g = ['Sa.x', '.###', '.A.E'];
+      // Run 1: Pip waits, then steps onto the plate and is caught there.
+      var s = play(start(g, runLimit: 2), 'WR');
+      expect(s.runIndex, 1);
+      s = play(s, 'D');
+      expect(s.shades, [_p(2, 0)]);
+      s = play(s, 'D'); // echo steps onto the plate; Shade lands on it
+      expect(s.ghostPositions, [_p(1, 0)]);
+      expect(s.ghostAlive, [false]);
+      expect(s.openDoors, isEmpty);
+      s = play(s, 'R');
+      expect(s.player, _p(0, 2), reason: 'door A never opened');
+    });
+    test('a door can close on a Shade; it walks out, actors stay out', () {
+      const g = ['xA.a', '###S', '###E'];
+      var s = play(start(g), 'U'); // Pip onto the plate
+      expect(s.shades, [_p(0, 0)], reason: 'door was shut this beat');
+      expect(s.openDoors, {_p(1, 0)});
+      s = play(s, 'L'); // Pip leaves the plate; the Shade enters the door
+      expect(s.shades, [_p(1, 0)]);
+      expect(s.openDoors, isEmpty, reason: 'a Shade does not hold a door');
+      s = play(s, 'L'); // Pip is blocked by the shut door; the Shade walks out
+      expect(s.player, _p(2, 0));
+      expect(s.shades, [_p(2, 0)]);
+      expect(s.status, GameStatus.lost);
     });
   });
 

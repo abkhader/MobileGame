@@ -14,9 +14,9 @@ class Level {
     required Map<String, Position> plates,
     required Map<String, List<Position>> doors,
     required List<Position> sparks,
-    Map<Position, int> lasers = const {},
-    Set<Position> cracked = const {},
-    List<Position> shadeStarts = const [],
+    required Map<Position, int> lasers,
+    required Set<Position> cracked,
+    required List<Position> shadeStarts,
     this.tip,
     this.bestScore,
     List<List<Move>>? solution,
@@ -58,7 +58,8 @@ class Level {
   final Map<Position, int> lasers;
 
   /// Cracked floor tiles. Each collapses into a hole once everyone has
-  /// stepped off it (see `Rules.collapse`); holes last for the rest of a run.
+  /// stepped off it or dissolved on it (see `Rules.collapse` and
+  /// `Rules.collapseUnderDissolved`); holes last for the rest of a run.
   final Set<Position> cracked;
 
   /// Shade start tiles (floor) in reading order (row-major). A Shade's index

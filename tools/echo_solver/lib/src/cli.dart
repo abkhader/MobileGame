@@ -327,6 +327,11 @@ String? sparkFailure(
 /// for players and ghosts alike, because ghosts replay their run's player
 /// moves. That play wins the original level with no actor ever on [cell].
 /// So "no player steps there" and "no actor steps there" coincide.
+///
+/// The level's dangers (lasers, cracked floor, Shade starts) are carried
+/// over unchanged; [cell] is a spark, so it is never one of them.
+// TODO(Task 2): re-justify this walling argument now that dangers exist
+// (hits end runs, Shades chase actors, cracks collapse behind them).
 bool? _avoidable(Level level, Position cell, int? maxNodes) {
   final walled = Level(
     id: level.id,
@@ -349,6 +354,9 @@ bool? _avoidable(Level level, Position cell, int? maxNodes) {
       for (final s in level.sparks)
         if (s != cell) s,
     ],
+    lasers: level.lasers,
+    cracked: level.cracked,
+    shadeStarts: level.shadeStarts,
   );
   final result = maxNodes == null
       ? solve(walled)
