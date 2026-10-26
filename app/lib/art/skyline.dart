@@ -10,9 +10,13 @@ enum BuildingState { locked, open, solved }
 
 /// One level as a building on the skyline.
 class Building {
-  const Building({required this.state, this.stars = 0});
+  const Building({required this.state, this.stars = 0, this.sparkMask = 0});
 
   final BuildingState state;
+
+  /// Bit i set: spark i of this level is remembered; each lights one dot in
+  /// the sky above the building.
+  final int sparkMask;
 
   /// 0–3; only used when [state] is [BuildingState.solved].
   final int stars;
@@ -27,7 +31,11 @@ List<Building> buildingsFor(List<String> ids, ProgressRepository progress) => [
 Building _buildingFor(String id, List<String> ids, ProgressRepository p) {
   final level = p.progressOf(id);
   if (level.completed) {
-    return Building(state: BuildingState.solved, stars: level.stars);
+    return Building(
+      state: BuildingState.solved,
+      stars: level.stars,
+      sparkMask: level.sparkMask,
+    );
   }
   return Building(
     state: p.isUnlocked(id, ids) ? BuildingState.open : BuildingState.locked,
@@ -77,7 +85,58 @@ void paintSkyline(
       _paintBuilding(canvas, size, i, slot, buildings[i], allLit, seed);
     }
   }
+  if (!allLit) _paintSparkLights(canvas, size, buildings, seed);
   _paintGround(canvas, size, allLit);
+}
+
+/// Where the spark lights go: one point per remembered spark, above its
+/// building and fixed by building index, spark index and [seed]. The skyline
+/// is drawn from a cached picture, so this costs nothing per frame; tests
+/// read it to count the lights.
+@visibleForTesting
+List<Offset> skylineSparkLights(
+  Size size,
+  List<Building> buildings, {
+  int seed = 0,
+}) {
+  final lights = <Offset>[];
+  final n = buildings.length;
+  if (size.isEmpty || n == 0) return lights;
+  final slot = size.width / n;
+  for (var i = 0; i < n; i++) {
+    final b = buildings[i];
+    if (b.state != BuildingState.solved) continue;
+    final body = _bodyRect(size, i, slot, seed);
+    for (var k = 0; k < 3; k++) {
+      if (b.sparkMask & (1 << k) == 0) continue;
+      final x =
+          body.left +
+          body.width * (0.2 + 0.3 * k + 0.1 * _noise(i * 3 + k, 21, seed));
+      final y = math.max(3.0, body.top - 5 - 9 * _noise(i * 3 + k, 22, seed));
+      lights.add(Offset(x, y));
+    }
+  }
+  return lights;
+}
+
+void _paintSparkLights(Canvas canvas, Size size, List<Building> b, int seed) {
+  final lights = skylineSparkLights(size, b, seed: seed);
+  if (lights.isEmpty) return;
+  final glow = Paint()
+    ..color = palette.spark.withValues(alpha: 0.55)
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+  final core = Paint()..color = palette.sparkCore;
+  for (final p in lights) {
+    canvas
+      ..drawCircle(p, 3.2, glow)
+      ..drawCircle(p, 1.3, core);
+  }
+}
+
+Rect _bodyRect(Size size, int i, double slot, int seed) {
+  final w = math.max(2.0, slot * (0.56 + 0.32 * _noise(i, 1, seed)));
+  final h = size.height * (0.4 + 0.44 * _noise(i, 2, seed));
+  return Rect.fromLTWH(i * slot + (slot - w) / 2, size.height - h, w, h);
 }
 
 /// A deterministic value in [0, 1] for index [i] and channel [salt].
@@ -140,10 +199,9 @@ void _paintBuilding(
   int seed,
 ) {
   final ground = size.height;
-  final w = math.max(2.0, slot * (0.56 + 0.32 * _noise(i, 1, seed)));
-  final h = size.height * (0.4 + 0.44 * _noise(i, 2, seed));
-  final left = i * slot + (slot - w) / 2;
-  final body = Rect.fromLTWH(left, ground - h, w, h);
+  final body = _bodyRect(size, i, slot, seed);
+  final w = body.width;
+  final h = body.height;
   final roof = (_noise(i, 3, seed) * 3).floor();
   final accent = _accents[(i + seed * 2) % _accents.length];
 

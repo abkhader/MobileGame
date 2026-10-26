@@ -259,6 +259,8 @@ void main() {
     expect(services.progress.progressOf('1-01').stars, 3);
     expect(services.completedThisSession, 1);
     expect(find.byIcon(Icons.star), findsNWidgets(3));
+    expect(find.text('Finished'), findsOneWidget);
+    expect(find.text('In 4 moves or fewer'), findsOneWidget);
     expect(find.text('Score 4 · Best 4'), findsOneWidget);
   });
 
@@ -399,7 +401,7 @@ void main() {
           levelId: ids.last,
           score: 5,
           best: 5,
-          stars: 3,
+          after: const LevelProgress(completed: true, finished: true),
         ),
       ),
     );

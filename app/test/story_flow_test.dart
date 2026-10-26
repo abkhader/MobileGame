@@ -81,7 +81,12 @@ Future<void> _pushLevelComplete(
             levelId: id,
             score: 5,
             best: 5,
-            stars: 3,
+            after: const LevelProgress(
+              completed: true,
+              finished: true,
+              sparkMask: 7,
+              movesStar: true,
+            ),
           ),
         ),
       );

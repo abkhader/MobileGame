@@ -10,6 +10,7 @@ import 'package:flutter/scheduler.dart' show Ticker;
 
 import '../app_services.dart';
 import '../art/pip.dart';
+import '../art/spark_icon.dart';
 import '../art/spark_star.dart';
 import '../audio/audio_service.dart';
 import '../audio/game_sounds.dart';
@@ -394,6 +395,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final score = c.state.score;
     final best = c.level.bestScore ?? score;
     final sparkMask = c.sparkMask;
+    // What this win adds is the difference from what was saved before.
+    final before = services.progress.progressOf(levelId);
     // Replace this route explicitly: a menu may sit above it.
     final route = ModalRoute.of(context)!;
     final navigator = Navigator.of(context);
@@ -403,8 +406,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       best: best,
       sparkMask: sparkMask,
     );
-    // The level's kept stars, earned in this play or before.
-    final stars = services.progress.progressOf(levelId).stars;
+    // The level's kept goals, earned in this play or before.
+    final after = services.progress.progressOf(levelId);
     services.completedThisSession++;
     if (!mounted) return;
     // Close any open menu or dialog above this route first.
@@ -417,7 +420,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           levelId: levelId,
           score: score,
           best: best,
-          stars: stars,
+          before: before,
+          after: after,
         ),
       ),
     );
@@ -1069,7 +1073,7 @@ class _SparkCounter extends StatelessWidget {
           child: const CustomPaint(
             key: Key('spark-icon'),
             size: Size.square(_icon),
-            painter: _SparkIconPainter(),
+            painter: SparkIconPainter(),
           ),
         ),
         const SizedBox(width: 4),
@@ -1083,26 +1087,6 @@ class _SparkCounter extends StatelessWidget {
       ],
     ),
   );
-}
-
-/// The counter's star, from the same path as the board's sparks.
-class _SparkIconPainter extends CustomPainter {
-  const _SparkIconPainter();
-
-  static final _paint = Paint()..color = palette.spark;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas
-      ..save()
-      ..translate(size.width / 2, size.height / 2)
-      ..scale(size.shortestSide / 2)
-      ..drawPath(unitSparkStar, _paint)
-      ..restore();
-  }
-
-  @override
-  bool shouldRepaint(_SparkIconPainter old) => false;
 }
 
 /// Golden stars flying between tiles and the counter, one slot per spark so

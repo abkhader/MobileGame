@@ -183,7 +183,8 @@ class _SkylinePainter extends CustomPainter {
     if (old.buildings.length != buildings.length) return true;
     for (var i = 0; i < buildings.length; i++) {
       if (old.buildings[i].state != buildings[i].state ||
-          old.buildings[i].stars != buildings[i].stars) {
+          old.buildings[i].stars != buildings[i].stars ||
+          old.buildings[i].sparkMask != buildings[i].sparkMask) {
         return true;
       }
     }

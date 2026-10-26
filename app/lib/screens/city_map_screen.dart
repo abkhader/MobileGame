@@ -5,6 +5,7 @@ import '../art/skyline.dart';
 import '../data/level_repository.dart';
 import '../data/story_repository.dart';
 import '../game/palette.dart' as palette;
+import 'ability_badges.dart';
 import 'open_level.dart';
 
 /// Lumen City: one district panel per chapter, each a skyline with one
@@ -65,6 +66,22 @@ class _CityMapScreenState extends State<CityMapScreen> {
         title: const Text('Lumen City'),
         backgroundColor: palette.background,
         foregroundColor: Colors.white,
+        actions: [
+          if (ids != null)
+            ListenableBuilder(
+              listenable: services.progress,
+              builder: (context, _) => Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(
+                  // Three sparks per bundled level.
+                  child: SparkTotal(
+                    count: services.progress.totalSparks,
+                    of: ids.length * 3,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: ids == null
           ? const Center(child: CircularProgressIndicator())
@@ -89,6 +106,8 @@ class _CityMapScreenState extends State<CityMapScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          AbilityBadges(total: services.progress.totalSparks),
+          const SizedBox(height: 12),
           for (final MapEntry(key: chapter, value: districtIds)
               in districts.entries)
             _DistrictPanel(
@@ -259,7 +278,11 @@ class _SkylinePainter extends CustomPainter {
     for (var i = 0; i < buildings.length; i++) {
       final a = old.buildings[i];
       final b = buildings[i];
-      if (a.state != b.state || a.stars != b.stars) return true;
+      if (a.state != b.state ||
+          a.stars != b.stars ||
+          a.sparkMask != b.sparkMask) {
+        return true;
+      }
     }
     return false;
   }

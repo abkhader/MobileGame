@@ -26,13 +26,12 @@ void main() {
     expect(c.canUndo, isFalse);
   });
 
-  test('win gives stars and ignores further moves silently', () {
+  test('win ignores further moves silently', () {
     final c = GameController(_level(['S..E'], bestScore: 3));
     for (var i = 0; i < 3; i++) {
       c.move(Move.right);
     }
     expect(c.lastEvent, GameEvent.won);
-    expect(c.stars, 3);
     expect(c.previous, isNotNull);
     expect(c.canUndo, isFalse);
     var n = 0;
@@ -75,7 +74,6 @@ void main() {
     expect(c.state.currentRun, [Move.left]);
     expect(c.canUndo, isFalse);
     expect(c.canEndRun, isFalse);
-    expect(c.stars, isNull);
   });
 
   test('restart resets and notifies even at the start', () {

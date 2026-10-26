@@ -29,13 +29,6 @@ class GameController extends ChangeNotifier {
 
   bool get canEndRun => _playing && _state.tick > 0;
 
-  int? get stars => _state.status == GameStatus.won
-      ? Scoring.stars(
-          score: _state.score,
-          best: level.bestScore ?? _state.score,
-        )
-      : null;
-
   /// Bit i set while this play holds spark i (in `level.sparks` order).
   int get sparkMask => sparkMaskOf(_state);
 
