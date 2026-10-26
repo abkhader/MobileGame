@@ -27,6 +27,10 @@ class SparkProof {
   final int nodes;
 }
 
+/// Default node budget of one [sparkProof] (a few seconds): a slow proof
+/// fails fast instead of stalling the level check.
+const sparkProofMaxNodes = 3000000;
+
 /// Proves whether [spark] (one of [level]'s sparks) can be collected in a
 /// winning play, and whether that needs an echo. [maxNodes] caps the joint
 /// states expanded over every search this makes.
@@ -38,7 +42,11 @@ class SparkProof {
 /// "collectible, and no winning play collects it in run index 0": no play
 /// has run 0 collect, and some play has a later run `j` collect (an OR over
 /// `j`, the final run first).
-SparkProof sparkProof(Level level, Position spark, {int maxNodes = 30000000}) {
+SparkProof sparkProof(
+  Level level,
+  Position spark, {
+  int maxNodes = sparkProofMaxNodes,
+}) {
   if (!level.sparks.contains(spark)) {
     throw ArgumentError.value(spark, 'spark', 'is not a spark of the level');
   }

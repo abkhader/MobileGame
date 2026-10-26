@@ -5,9 +5,9 @@
   "tip": "Hold ⏳ to let time pass while Pip stays still.",
   "grid": [
     "########",
-    "#b.a.S.#",
+    "#b*a.S.#",
     "######.#",
-    "#E.B.A.#",
+    "#E.B*A*#",
     "########"
   ],
   "bestScore": 13,

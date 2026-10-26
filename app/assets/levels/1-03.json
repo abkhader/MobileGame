@@ -5,8 +5,8 @@
   "tip": "Tap New echo. Pip starts over, and your echo repeats every move.",
   "grid": [
     "#######",
-    "#Sa.AE#",
-    "#######"
+    "#Sa*AE#",
+    "#**####"
   ],
   "bestScore": 5,
   "solution": [

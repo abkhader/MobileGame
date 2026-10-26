@@ -8,7 +8,7 @@ import 'solver.dart';
 
 const _usage =
     'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N] '
-    '[--report] [--sparks]';
+    '[--report]';
 
 /// Allowed `runLimit` range (inclusive) per chapter.
 final _levelId = RegExp(r'^[1-3]-(0[1-9]|10)$');
@@ -19,8 +19,8 @@ const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4)};
 ///
 /// `--check` verifies every `*.json` level in the directory; `--write` fills
 /// in `bestScore` and `solution` from the solver. Output goes to [out]
-/// (default [stdout]). `--sparks` adds the spark checks ([sparkFailure]);
-/// they are off by default until every level has its sparks.
+/// (default [stdout]). Both modes also run the spark checks
+/// ([sparkFailure]).
 /// [reducedMaxNodes] and [sparkMaxNodes] are test-only: they override the
 /// node budget of the "needs every run" proof and of each spark proof.
 Future<int> runCli(
@@ -57,7 +57,7 @@ Future<int> runCli(
           '  runs ${result.runs}, best ${result.best}, nodes ${result.nodes}, '
           '${watch.elapsedMilliseconds} ms',
         );
-        if (options.sparks) sink.writeln('  sparks: ${result.sparks}');
+        sink.writeln('  sparks: ${result.sparks}');
       }
     } else {
       failed = true;
@@ -73,14 +73,12 @@ class _Options {
     required this.write,
     required this.maxNodes,
     required this.report,
-    required this.sparks,
   });
 
   final Directory dir;
   final bool write;
   final int? maxNodes;
   final bool report;
-  final bool sparks;
 }
 
 /// Outcome of processing one file: [failure] is null when every check passed.
@@ -98,7 +96,7 @@ class _Outcome {
   final int runs;
   final int nodes;
 
-  /// The `--report` spark list; empty without `--sparks`.
+  /// The `--report` spark list.
   final String sparks;
 }
 
@@ -107,7 +105,6 @@ _Options? _parseArgs(List<String> args) {
   bool? write;
   int? maxNodes;
   var report = false;
-  var sparks = false;
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
     switch (arg) {
@@ -122,9 +119,6 @@ _Options? _parseArgs(List<String> args) {
       case '--report':
         if (report) return null;
         report = true;
-      case '--sparks':
-        if (sparks) return null;
-        sparks = true;
       default:
         if (arg.startsWith('--') || dir != null) return null;
         dir = arg;
@@ -133,13 +127,7 @@ _Options? _parseArgs(List<String> args) {
   if (dir == null || write == null) return null;
   final directory = Directory(dir);
   if (!directory.existsSync()) return null;
-  return _Options(
-    directory,
-    write: write,
-    maxNodes: maxNodes,
-    report: report,
-    sparks: sparks,
-  );
+  return _Options(directory, write: write, maxNodes: maxNodes, report: report);
 }
 
 String _baseName(File file) => file.uri.pathSegments.last;
@@ -209,14 +197,12 @@ _Outcome _process(
       );
       if (quality != null) return _Outcome.fail(quality);
       final labels = <String>[];
-      if (options.sparks) {
-        final failure = sparkFailure(
-          level,
-          maxNodes: sparkMaxNodes ?? options.maxNodes,
-          labels: labels,
-        );
-        if (failure != null) return _Outcome.fail(failure);
-      }
+      final failure = sparkFailure(
+        level,
+        maxNodes: sparkMaxNodes ?? options.maxNodes,
+        labels: labels,
+      );
+      if (failure != null) return _Outcome.fail(failure);
       return _Outcome.ok(
         best: bestScore,
         runs: level.runLimit,
@@ -270,7 +256,8 @@ String? _qualityFailure(
 /// in a winning play, and in chapters 2-3 at least one that needs an echo
 /// (no winning play collects it in run 1). Returns the first failure, or
 /// null after adding `(x,y) echo` or `(x,y) run1` per spark to [labels].
-/// [maxNodes] is the node budget of each spark proof.
+/// [maxNodes] is the node budget of each spark proof (default
+/// [sparkProofMaxNodes]).
 String? sparkFailure(Level level, {int? maxNodes, List<String>? labels}) {
   final sparks = level.sparks;
   if (sparks.length != 3) return 'level has ${sparks.length} sparks (need 3)';

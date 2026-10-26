@@ -4,8 +4,8 @@
   "runLimit": 1,
   "tip": "Plates open doors, but only while something stands on them.",
   "grid": [
-    "#######",
-    "#S.aAE#",
+    "##**###",
+    "#S*aAE#",
     "#######"
   ],
   "bestScore": 4,

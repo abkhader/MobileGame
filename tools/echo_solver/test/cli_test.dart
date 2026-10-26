@@ -3,11 +3,15 @@ import 'dart:io';
 
 import 'package:echo_core/echo_core.dart';
 import 'package:echo_solver/src/cli.dart';
+import 'package:echo_solver/src/solver.dart';
 import 'package:test/test.dart';
 
 const _usage =
     'usage: echo_solver <levels-dir> (--check | --write) [--max-nodes N] '
-    '[--report] [--sparks]';
+    '[--report]';
+
+// A one-run corridor with three sparks on its route.
+const _plain = ['#######', '#S***E#', '#######'];
 
 void main() {
   late Directory dir;
@@ -32,7 +36,7 @@ void main() {
   }
 
   test('--write adds bestScore and solution, then --check passes', () async {
-    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-01', _plain, 1));
     final (wCode, wOut) = await run(['--write']);
     expect(wCode, 0);
     expect(wOut, '1-01.json: OK (best 4)\n');
@@ -78,11 +82,8 @@ void main() {
   });
 
   test('--check reports a missing bestScore and a missing solution', () async {
-    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
-    put(
-      '1-02.json',
-      level('1-02', ['#######', '#S...E#', '#######'], 1, {'bestScore': 4}),
-    );
+    put('1-01.json', level('1-01', _plain, 1));
+    put('1-02.json', level('1-02', _plain, 1, {'bestScore': 4}));
     final (code, out) = await run(['--check']);
     expect(code, 1);
     expect(out, contains('1-01.json: FAIL missing bestScore'));
@@ -92,17 +93,12 @@ void main() {
   test('--check reports a solution with the wrong score', () async {
     put(
       '1-01.json',
-      level(
-        '1-01',
-        ['#######', '#S...E#', '#######'],
-        1,
-        {
-          'bestScore': 4,
-          'solution': [
-            ['R', 'R', 'R', 'W', 'R'],
-          ],
-        },
-      ),
+      level('1-01', _plain, 1, {
+        'bestScore': 4,
+        'solution': [
+          ['R', 'R', 'R', 'W', 'R'],
+        ],
+      }),
     );
     final (code, out) = await run(['--check']);
     expect(code, 1);
@@ -110,7 +106,7 @@ void main() {
   });
 
   test('--check reports an id that does not match the file name', () async {
-    put('1-01.json', level('1-02', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-02', _plain, 1));
     final (code, out) = await run(['--check']);
     expect(code, 1);
     expect(out, '1-01.json: FAIL id \'1-02\' does not match file name\n');
@@ -132,14 +128,14 @@ void main() {
 
   test('an unreadable file fails and processing continues', () async {
     File('${dir.path}/bad.json').writeAsBytesSync([0xff, 0xfe, 0xfd]);
-    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-01', _plain, 1));
     final (code, out) = await run(['--write']);
     expect(code, 1);
     expect(out, '1-01.json: OK (best 4)\nbad.json: FAIL cannot read file\n');
   });
 
   test('--write does not modify a file that fails', () async {
-    put('1-01.json', level('1-02', ['#######', '#S...E#', '#######'], 1));
+    put('1-01.json', level('1-02', _plain, 1));
     final before = File('${dir.path}/1-01.json').readAsStringSync();
     final (code, _) = await run(['--write']);
     expect(code, 1);
@@ -154,8 +150,8 @@ void main() {
   });
 
   test('files are processed in name order', () async {
-    put('1-02.json', level('1-02', ['#######', '#S...E#', '#######'], 1));
-    put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
+    put('1-02.json', level('1-02', _plain, 1));
+    put('1-01.json', level('1-01', _plain, 1));
     final (_, out) = await run(['--write']);
     expect(out, '1-01.json: OK (best 4)\n1-02.json: OK (best 4)\n');
   });
@@ -170,13 +166,14 @@ void main() {
     const echoGrid = ['#######', '#Sa.AE#', '#######'];
 
     test('1-03 with 2 runs passes and needs both runs', () async {
-      put('1-03.json', level('1-03', echoGrid, 2));
+      const grid = ['########', '#Sa*A.E#', '#*#*####', '########'];
+      put('1-03.json', level('1-03', grid, 2));
       final (wCode, wOut) = await run(['--write']);
       expect(wCode, 0);
-      expect(wOut, '1-03.json: OK (best 5)\n');
+      expect(wOut, '1-03.json: OK (best 6)\n');
       final (cCode, cOut) = await run(['--check']);
       expect(cCode, 0);
-      expect(cOut, '1-03.json: OK (best 5)\n');
+      expect(cOut, '1-03.json: OK (best 6)\n');
     });
 
     test('a level solvable with one run fewer fails', () async {
@@ -193,7 +190,7 @@ void main() {
     });
 
     test('runLimit outside the chapter range fails', () async {
-      put('2-01.json', level('2-01', ['#######', '#S...E#', '#######'], 1));
+      put('2-01.json', level('2-01', _plain, 1));
       final (code, out) = await run(['--write']);
       expect(code, 1);
       expect(
@@ -203,7 +200,7 @@ void main() {
     });
 
     test('ids outside C-NN with chapter 1-3 and level 01-10 fail', () async {
-      const grid = ['#######', '#S...E#', '#######'];
+      const grid = _plain;
       for (final id in ['a', '4-01', '0-01', '1-00', '1-11', '1-1', '01-01']) {
         put('$id.json', level(id, grid, 1));
       }
@@ -225,10 +222,7 @@ void main() {
 
     test('a tip on a level other than 1-01 to 1-03 and 1-07 fails', () async {
       for (final id in ['1-04', '1-05', '1-06', '1-08']) {
-        put(
-          '$id.json',
-          level(id, ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
-        );
+        put('$id.json', level(id, _plain, 1, {'tip': 'Hi.'}));
         final (code, out) = await run(['--write']);
         expect(code, 1);
         expect(
@@ -240,20 +234,14 @@ void main() {
     });
 
     test('a tip on 1-07 passes', () async {
-      put(
-        '1-07.json',
-        level('1-07', ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
-      );
+      put('1-07.json', level('1-07', _plain, 1, {'tip': 'Hi.'}));
       final (code, out) = await run(['--write']);
       expect(code, 0);
       expect(out, '1-07.json: OK (best 4)\n');
     });
 
     test('a tip on 1-01 to 1-03 passes', () async {
-      put(
-        '1-01.json',
-        level('1-01', ['#######', '#S...E#', '#######'], 1, {'tip': 'Hi.'}),
-      );
+      put('1-01.json', level('1-01', _plain, 1, {'tip': 'Hi.'}));
       final (code, out) = await run(['--write']);
       expect(code, 0);
       expect(out, '1-01.json: OK (best 4)\n');
@@ -277,22 +265,23 @@ void main() {
       );
     });
 
-    test('--report prints difficulty after the OK line', () async {
-      put('1-01.json', level('1-01', ['#######', '#S...E#', '#######'], 1));
+    test('--report prints difficulty and sparks after the OK line', () async {
+      put('1-01.json', level('1-01', _plain, 1));
       await run(['--write']);
       final (code, out) = await run(['--check', '--report']);
       expect(code, 0);
       final lines = out.trimRight().split('\n');
-      expect(lines, hasLength(2));
+      expect(lines, hasLength(3));
       expect(lines[0], '1-01.json: OK (best 4)');
       expect(
         lines[1],
         matches(RegExp(r'^  runs 1, best 4, nodes \d+, \d+ ms$')),
       );
+      expect(lines[2], '  sparks: (2,1) run1, (3,1) run1, (4,1) run1');
     });
   });
 
-  group('spark checks (--sparks)', () {
+  group('spark checks (on by default)', () {
     // Run 1 (index 0) holds plate a so run 2 can pass door A. Sparks: (3,1)
     // and (1,2) are open to run 1; (4,2) sits under door A, so only a run
     // passing the door with an echo on the plate reaches it.
@@ -301,24 +290,18 @@ void main() {
     const two = ['########', '#Sa*A.E#', '#*######', '########'];
     const walled = ['########', '#Sa*A.E#', '#*######', '###*####'];
 
+    // --write stores bestScore and solution before the spark checks run, so
+    // its exit code is ignored here: some of these levels fail them.
     Future<(int, String)> writeThenCheck(List<String> extra) async {
-      final (wCode, wOut) = await run(['--write']);
-      expect(wCode, 0, reason: wOut);
+      await run(['--write']);
       return run(['--check', ...extra]);
     }
-
-    test('without --sparks a level with no sparks still passes', () async {
-      put('1-03.json', level('1-03', ['#######', '#Sa.AE#', '#######'], 2));
-      final (code, out) = await writeThenCheck([]);
-      expect(code, 0);
-      expect(out, '1-03.json: OK (best 5)\n');
-    });
 
     test(
       'a good chapter-2 level passes and --report lists its sparks',
       () async {
         put('2-01.json', level('2-01', good, 2));
-        final (code, out) = await writeThenCheck(['--sparks', '--report']);
+        final (code, out) = await writeThenCheck(['--report']);
         expect(code, 0, reason: out);
         final lines = out.trimRight().split('\n');
         expect(lines, hasLength(3));
@@ -331,30 +314,23 @@ void main() {
       },
     );
 
-    test('--report without --sparks prints no sparks line', () async {
-      put('2-01.json', level('2-01', good, 2));
-      final (code, out) = await writeThenCheck(['--report']);
-      expect(code, 0);
-      expect(out, isNot(contains('sparks')));
-    });
-
     test('a level with 2 sparks fails', () async {
       put('1-03.json', level('1-03', two, 2));
-      final (code, out) = await writeThenCheck(['--sparks']);
+      final (code, out) = await writeThenCheck([]);
       expect(code, 1);
       expect(out, '1-03.json: FAIL level has 2 sparks (need 3)\n');
     });
 
     test('a level with no sparks fails', () async {
       put('1-03.json', level('1-03', ['#######', '#Sa.AE#', '#######'], 2));
-      final (code, out) = await writeThenCheck(['--sparks']);
+      final (code, out) = await writeThenCheck([]);
       expect(code, 1);
       expect(out, '1-03.json: FAIL level has 0 sparks (need 3)\n');
     });
 
     test('a spark that cannot be collected fails', () async {
       put('1-03.json', level('1-03', walled, 2));
-      final (code, out) = await writeThenCheck(['--sparks']);
+      final (code, out) = await writeThenCheck([]);
       expect(code, 1);
       expect(
         out,
@@ -365,20 +341,20 @@ void main() {
 
     test('a chapter-2 level with no echo spark fails', () async {
       put('2-01.json', level('2-01', noEcho, 2));
-      final (code, out) = await writeThenCheck(['--sparks']);
+      final (code, out) = await writeThenCheck([]);
       expect(code, 1);
       expect(out, '2-01.json: FAIL no spark needs an echo\n');
     });
 
     test('a chapter-1 level needs no echo spark', () async {
       put('1-03.json', level('1-03', noEcho, 2));
-      final (code, out) = await writeThenCheck(['--sparks']);
+      final (code, out) = await writeThenCheck([]);
       expect(code, 0, reason: out);
     });
 
     test('--write runs the spark checks too', () async {
       put('1-03.json', level('1-03', two, 2));
-      final (code, out) = await run(['--write', '--sparks']);
+      final (code, out) = await run(['--write']);
       expect(code, 1);
       expect(out, '1-03.json: FAIL level has 2 sparks (need 3)\n');
     });
@@ -389,7 +365,7 @@ void main() {
       expect(wCode, 0);
       final buffer = StringBuffer();
       final code = await runCli(
-        [dir.path, '--check', '--sparks'],
+        [dir.path, '--check'],
         out: buffer,
         sparkMaxNodes: 1,
       );
@@ -399,6 +375,10 @@ void main() {
         '2-01.json: FAIL cannot prove spark at (3,1) is collectible '
         '(budget exceeded)\n',
       );
+    });
+
+    test('each spark proof defaults to a 3,000,000-node budget', () {
+      expect(sparkProofMaxNodes, 3000000);
     });
 
     test('a spark off the floor fails', () {
@@ -479,8 +459,8 @@ void main() {
     );
     test('unknown flag', () => expectUsage([dir.path, '--check', '--nope']));
     test(
-      'repeated --sparks',
-      () => expectUsage([dir.path, '--check', '--sparks', '--sparks']),
+      '--sparks is not an option (the checks always run)',
+      () => expectUsage([dir.path, '--check', '--sparks']),
     );
   });
 }
