@@ -78,6 +78,7 @@ void main() {
     await tapKey(t, LogicalKeyboardKey.arrowDown);
     expect(_game(t).state.collected, {const Position(1, 2)});
     expect(_sparks(1), findsOneWidget);
+    await pumpFrames(t, const Duration(milliseconds: 500));
     expect(find.text('1 / 3'), findsOneWidget);
     await tapKey(t, LogicalKeyboardKey.keyZ);
     expect(_game(t).state.collected, isEmpty);
@@ -241,5 +242,81 @@ void main() {
     expect(p.sparkMask, 0);
     final reopened = (await t.runAsync(ProgressRepository.open))!;
     expect(reopened.totalSparks, 0);
+  });
+
+  testWidgets('the HUD number rises when the flying star lands', (t) async {
+    final sem = t.ensureSemantics();
+    await _pumpGame(t, '1-03');
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    await t.pump(Duration.zero);
+    await t.pump(const Duration(milliseconds: 100));
+    expect(_game(t).state.collected, hasLength(1));
+    expect(_fly, findsOneWidget);
+    // The star is still in the air: the number waits for it ...
+    expect(find.text('0 / 3'), findsOneWidget);
+    // ... but screen readers hear the real count at once.
+    expect(_sparks(1), findsOneWidget);
+    await pumpFrames(t, const Duration(milliseconds: 500));
+    expect(_fly, findsNothing);
+    expect(find.text('1 / 3'), findsOneWidget);
+    await _settleFully(t);
+    sem.dispose();
+  });
+
+  testWidgets('reduced effects: the HUD number rises at once', (t) async {
+    await _pumpGame(t, '1-03', reduceMotion: true);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    await t.pump(Duration.zero);
+    await t.pump(const Duration(milliseconds: 100));
+    expect(_game(t).state.collected, hasLength(1));
+    expect(find.text('1 / 3'), findsOneWidget);
+    await _settleFully(t);
+  });
+
+  testWidgets('a rewind during the flight keeps the number in step', (t) async {
+    await _pumpGame(t, '1-03');
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    await t.pump(Duration.zero);
+    // The beat is over; the star is still flying (400 ms).
+    await t.pump(const Duration(milliseconds: 250));
+    expect(_fly, findsOneWidget);
+    expect(find.text('0 / 3'), findsOneWidget);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.keyZ);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.keyZ);
+    // Frame by frame: the number never shows the spark that flew back.
+    for (var i = 0; i < 16; i++) {
+      await t.pump(const Duration(milliseconds: 50));
+      expect(find.text('0 / 3'), findsOneWidget);
+    }
+    expect(_game(t).state.collected, isEmpty);
+    await _settleFully(t);
+    expect(find.text('0 / 3'), findsOneWidget);
+  });
+
+  testWidgets('reduced effects: a rewound spark fades at the board size', (
+    t,
+  ) async {
+    await _pumpGame(t, '1-03', reduceMotion: true);
+    final state = t.state(find.byType(GameScreen)) as dynamic;
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    await t.pump(Duration.zero);
+    await t.pump(const Duration(milliseconds: 50));
+    // A collect fades at the counter, at the counter's size.
+    expect(state.sparkFlightRadiusForTesting(_sparkBelowStart), 7.0);
+    await _settleFully(t);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.keyZ);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.keyZ);
+    await t.pump(Duration.zero);
+    await t.pump(const Duration(milliseconds: 50));
+    expect(_game(t).state.collected, isEmpty);
+    expect(
+      state.sparkFlightRadiusForTesting(_sparkBelowStart),
+      _board(t).cellSize * 0.2,
+    );
+    await _settleFully(t);
   });
 }

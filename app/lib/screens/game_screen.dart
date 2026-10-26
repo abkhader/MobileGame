@@ -68,6 +68,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   final _flyKey = GlobalKey<_SparkFlyState>();
   final _gameKey = GlobalKey();
   final _counterKey = GlobalKey();
+  // Grabbed sparks still flying to the counter; its number waits for them.
+  final _sparksInbound = ValueNotifier<int>(0);
 
   @visibleForTesting
   GameController? get controllerForTesting => _controller;
@@ -81,6 +83,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// Stars in the air between the board and the counter.
   @visibleForTesting
   int get sparkFlightsForTesting => _flyKey.currentState?.activeCount ?? 0;
+
+  /// The end radius of spark [i]'s flight, or null when it is not flying.
+  @visibleForTesting
+  double? sparkFlightRadiusForTesting(int i) =>
+      _flyKey.currentState?.radiusOf(i);
 
   @override
   void initState() {
@@ -252,15 +259,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       final from = collect ? tile : hud;
       final to = collect ? hud : tile;
       if (reduce) {
-        fly.fly(
-          i,
-          to,
-          to,
-          _SparkFlyState.hudRadius,
-          _SparkFlyState.hudRadius,
-          _flyFade,
-          fade: true,
-        );
+        // A short fade where the star ends: at the counter's size there, at
+        // the board's size on a tile. It never holds the counter back.
+        final r = collect ? _SparkFlyState.hudRadius : radius;
+        fly.fly(i, to, to, r, r, _flyFade, fade: true);
       } else {
         fly.fly(
           i,
@@ -269,6 +271,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           collect ? radius : _SparkFlyState.hudRadius,
           collect ? _SparkFlyState.hudRadius : radius,
           collect ? _flyIn : _flyBack,
+          inbound: collect,
         );
       }
     }
@@ -429,6 +432,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _sparksInbound.dispose();
     _winTimer?.cancel();
     _tipTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -504,7 +508,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         children: [
           _buildColumn(context, c),
           Positioned.fill(
-            child: IgnorePointer(child: _SparkFly(key: _flyKey)),
+            child: IgnorePointer(
+              child: _SparkFly(key: _flyKey, inbound: _sparksInbound),
+            ),
           ),
         ],
       ),
@@ -532,10 +538,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     runLimit: c.level.runLimit,
                   ),
                   const SizedBox(width: 16),
-                  _SparkCounter(
-                    iconKey: _counterKey,
-                    count: state.collected.length,
-                    total: c.level.sparks.length,
+                  ValueListenableBuilder<int>(
+                    valueListenable: _sparksInbound,
+                    builder: (_, inbound, _) => _SparkCounter(
+                      iconKey: _counterKey,
+                      count: state.collected.length,
+                      // The number rises as each flying star lands.
+                      shown: math.max(0, state.collected.length - inbound),
+                      total: c.level.sparks.length,
+                    ),
                   ),
                 ],
               ),
@@ -1051,12 +1062,18 @@ class _SparkCounter extends StatelessWidget {
   const _SparkCounter({
     required this.iconKey,
     required this.count,
+    required this.shown,
     required this.total,
   });
 
   /// On the star, so a flight lands on its centre.
   final Key iconKey;
+
+  /// Sparks grabbed: screen readers hear it at once.
   final int count;
+
+  /// The drawn number: [count] minus the stars still flying in.
+  final int shown;
   final int total;
 
   static const _icon = _SparkFlyState.hudRadius * 2;
@@ -1078,7 +1095,7 @@ class _SparkCounter extends StatelessWidget {
         ),
         const SizedBox(width: 4),
         Text(
-          '$count / $total',
+          '$shown / $total',
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: palette.spark,
             fontWeight: FontWeight.w600,
@@ -1093,7 +1110,10 @@ class _SparkCounter extends StatelessWidget {
 /// quick grabs (or rewinds) all animate. One ticker drives every slot and
 /// one painter draws them; the layer exists only while a star is in the air.
 class _SparkFly extends StatefulWidget {
-  const _SparkFly({super.key});
+  const _SparkFly({super.key, required this.inbound});
+
+  /// Set to the number of collect flights still in the air.
+  final ValueNotifier<int> inbound;
 
   @override
   State<_SparkFly> createState() => _SparkFlyState();
@@ -1109,6 +1129,9 @@ class _FlightSlot {
   double r0 = 0;
   double r1 = 0;
   bool fade = false;
+
+  /// Flying in to the counter: it holds the counter's number back.
+  bool inbound = false;
 
   /// Seconds on the ticker when it started, and how long it lasts.
   double start = 0;
@@ -1133,6 +1156,12 @@ class _SparkFlyState extends State<_SparkFly>
 
   int get activeCount => _slots.where((s) => s.active).length;
 
+  /// The end radius of slot [index]'s flight, or null when it is idle.
+  double? radiusOf(int index) =>
+      index >= 0 && index < slots && _slots[index].active
+      ? _slots[index].r1
+      : null;
+
   void _onTick(Duration elapsed) {
     final now = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
     var any = false;
@@ -1140,8 +1169,18 @@ class _SparkFlyState extends State<_SparkFly>
       if (s.active && now - s.start >= s.duration) s.active = false;
       any |= s.active;
     }
+    _syncInbound();
     _now.value = now;
     if (!any) _stop();
+  }
+
+  /// Publishes how many collect flights are in the air (only on change).
+  void _syncInbound() {
+    var n = 0;
+    for (final s in _slots) {
+      if (s.active && s.inbound) n++;
+    }
+    widget.inbound.value = n;
   }
 
   void _stop() {
@@ -1160,6 +1199,7 @@ class _SparkFlyState extends State<_SparkFly>
     double r1,
     Duration duration, {
     bool fade = false,
+    bool inbound = false,
   }) {
     if (index < 0 || index >= slots) return;
     _slots[index]
@@ -1171,8 +1211,10 @@ class _SparkFlyState extends State<_SparkFly>
       ..r0 = r0
       ..r1 = r1
       ..fade = fade
+      ..inbound = inbound
       ..start = _ticker.isActive ? _now.value : 0
       ..duration = duration.inMicroseconds / Duration.microsecondsPerSecond;
+    _syncInbound();
     if (!_ticker.isActive) unawaited(_ticker.start());
     if (!_shown) setState(() => _shown = true);
   }
@@ -1182,6 +1224,7 @@ class _SparkFlyState extends State<_SparkFly>
     for (final s in _slots) {
       s.active = false;
     }
+    _syncInbound();
     if (_ticker.isActive) _stop();
   }
 
