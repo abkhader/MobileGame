@@ -19,40 +19,137 @@ void main() {
     expect(repo.progressOf('1-01').completed, isFalse);
   });
 
-  test('completion survives reopen and unlocks next', () async {
+  test('a win survives reopen and unlocks next', () async {
     var repo = await ProgressRepository.open();
-    await repo.recordCompletion('1-01', 2);
+    await repo.recordWin('1-01', score: 5, best: 4, sparkMask: 0);
     repo = await ProgressRepository.open();
-    expect(repo.progressOf('1-01').completed, isTrue);
-    expect(repo.progressOf('1-01').stars, 2);
+    final p = repo.progressOf('1-01');
+    expect(p.completed, isTrue);
+    expect(p.finished, isTrue);
+    expect(p.stars, 1);
     expect(repo.isUnlocked('1-02', ids), isTrue);
   });
 
-  test('keeps max stars and clamps', () async {
+  test('stars: finished + all three sparks + moves', () async {
     final repo = await ProgressRepository.open();
-    await repo.recordCompletion('1-01', 3);
-    await repo.recordCompletion('1-01', 1);
-    expect(repo.progressOf('1-01').stars, 3);
-    await repo.recordCompletion('1-02', 9);
-    expect(repo.progressOf('1-02').stars, 3);
-    await repo.recordCompletion('1-03', -4);
-    expect(repo.progressOf('1-03').stars, 0);
+    await repo.recordWin('1-01', score: 4, best: 4, sparkMask: 0);
+    expect(repo.progressOf('1-01').stars, 2);
+    await repo.recordWin('1-02', score: 9, best: 4, sparkMask: 0x7);
+    expect(repo.progressOf('1-02').stars, 2);
+    await repo.recordWin('1-03', score: 3, best: 4, sparkMask: 0x7);
+    final p = repo.progressOf('1-03');
+    expect(p.stars, 3);
+    expect(p.goals, (finished: true, allSparks: true, moves: true));
+  });
+
+  test('sparks OR across wins; moves star is kept', () async {
+    var repo = await ProgressRepository.open();
+    await repo.recordWin('1-01', score: 4, best: 4, sparkMask: 0x1);
+    await repo.recordWin('1-01', score: 9, best: 4, sparkMask: 0x4);
+    var p = repo.progressOf('1-01');
+    expect(p.sparkMask, 0x5);
+    expect(p.movesStar, isTrue);
+    expect(p.stars, 2);
+    expect(p.goals, (finished: true, allSparks: false, moves: true));
+    await repo.recordWin('1-01', score: 9, best: 4, sparkMask: 0x2);
+    repo = await ProgressRepository.open();
+    p = repo.progressOf('1-01');
+    expect(p.sparkMask, 0x7);
+    expect(p.stars, 3);
+  });
+
+  test('a spark mask is limited to three bits', () async {
+    final repo = await ProgressRepository.open();
+    await repo.recordWin('1-01', score: 9, best: 4, sparkMask: 0xFA);
+    expect(repo.progressOf('1-01').sparkMask, 0x2);
+  });
+
+  test('totalSparks counts every saved spark', () async {
+    var repo = await ProgressRepository.open();
+    expect(repo.totalSparks, 0);
+    await repo.recordWin('1-01', score: 9, best: 4, sparkMask: 0x5);
+    await repo.recordWin('1-02', score: 9, best: 4, sparkMask: 0x7);
+    await repo.recordWin('1-02', score: 9, best: 4, sparkMask: 0x1);
+    repo = await ProgressRepository.open();
+    expect(repo.totalSparks, 5);
+  });
+
+  test('recordWin notifies listeners', () async {
+    final repo = await ProgressRepository.open();
+    var calls = 0;
+    repo.addListener(() => calls++);
+    await repo.recordWin('1-01', score: 4, best: 4, sparkMask: 1);
+    expect(calls, 1);
   });
 
   test(
-    'skip completes with 0 stars, unlocks next, later completion sets stars',
+    'skip completes with 0 stars, unlocks next, a later win sets stars',
     () async {
       final repo = await ProgressRepository.open();
       await repo.recordSkip('1-02');
       expect(repo.progressOf('1-02').completed, isTrue);
+      expect(repo.progressOf('1-02').finished, isFalse);
       expect(repo.progressOf('1-02').stars, 0);
       expect(repo.isUnlocked('1-03', ids), isTrue);
-      await repo.recordCompletion('1-02', 2);
+      await repo.recordWin('1-02', score: 4, best: 4, sparkMask: 0);
       expect(repo.progressOf('1-02').stars, 2);
       await repo.recordSkip('1-02');
       expect(repo.progressOf('1-02').stars, 2);
+      expect(repo.progressOf('1-02').finished, isTrue);
     },
   );
+
+  test(
+    'old saves migrate: 3 stars keeps the moves star, sparks start at 0',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        key:
+            '{"levels":{"1-01":{"stars":3},"1-02":{"stars":2},'
+            '"1-03":{"stars":1},"2-01":{"stars":0}}}',
+      });
+      var repo = await ProgressRepository.open();
+      final three = repo.progressOf('1-01');
+      expect(three.completed, isTrue);
+      expect(three.finished, isTrue);
+      expect(three.movesStar, isTrue);
+      expect(three.sparkMask, 0);
+      expect(three.stars, 2);
+      expect(repo.progressOf('1-02').stars, 1);
+      expect(repo.progressOf('1-02').movesStar, isFalse);
+      expect(repo.progressOf('1-03').stars, 1);
+      // An old skip (0 stars) stays a skip.
+      expect(repo.progressOf('2-01').completed, isTrue);
+      expect(repo.progressOf('2-01').stars, 0);
+      expect(repo.totalSparks, 0);
+      // The migrated data is saved in the new shape on the next save.
+      await repo.setMusicOn(false);
+      repo = await ProgressRepository.open();
+      expect(repo.progressOf('1-01').stars, 2);
+      expect(repo.progressOf('2-01').stars, 0);
+      expect(repo.progressOf('2-01').completed, isTrue);
+    },
+  );
+
+  test('garbled level values load as defaults', () async {
+    SharedPreferences.setMockInitialValues({
+      key:
+          '{"levels":{"1-01":{"completed":true,"finished":"y","sparks":"x",'
+          '"moves":1},"1-02":{"completed":true,"finished":true,"sparks":-1,'
+          '"moves":true},"1-03":{"stars":"x"},"2-01":7}}',
+    });
+    final repo = await ProgressRepository.open();
+    final a = repo.progressOf('1-01');
+    expect(a.completed, isTrue);
+    expect(a.finished, isFalse);
+    expect(a.sparkMask, 0);
+    expect(a.movesStar, isFalse);
+    final b = repo.progressOf('1-02');
+    expect(b.sparkMask, 0);
+    expect(b.stars, 2);
+    expect(repo.progressOf('1-03').completed, isTrue);
+    expect(repo.progressOf('1-03').stars, 0);
+    expect(repo.progressOf('2-01').completed, isFalse);
+  });
 
   for (final bad in [
     '{oops',
@@ -66,7 +163,7 @@ void main() {
       expect(repo.progressOf('1-01').completed, isFalse);
       expect(repo.musicOn, isTrue);
       expect(repo.sfxOn, isTrue);
-      await repo.recordCompletion('1-01', 1);
+      await repo.recordWin('1-01', score: 9, best: 4, sparkMask: 0);
       final again = await ProgressRepository.open();
       expect(again.progressOf('1-01').stars, 1);
       expect(again.isUnlocked('1-02', ids), isTrue);
@@ -105,7 +202,7 @@ void main() {
       key: '{"levels":{"1-01":{"stars":2}},"musicOn":false,"sfxOn":true}',
     });
     final repo = await ProgressRepository.open();
-    expect(repo.progressOf('1-01').stars, 2);
+    expect(repo.progressOf('1-01').stars, 1);
     expect(repo.musicOn, isFalse);
     expect(repo.seenChapterIntro(1), isFalse);
     expect(repo.endingSeen, isFalse);
@@ -115,7 +212,7 @@ void main() {
     var repo = await ProgressRepository.open();
     await repo.markChapterIntroSeen(1);
     await repo.markEndingSeen();
-    await repo.recordCompletion('1-01', 3);
+    await repo.recordWin('1-01', score: 4, best: 4, sparkMask: 0);
     repo = await ProgressRepository.open();
     expect(repo.seenChapterIntro(1), isTrue);
     expect(repo.endingSeen, isTrue);
@@ -136,7 +233,7 @@ void main() {
     });
     final repo = await ProgressRepository.open();
     expect(repo.rewindTipsShown, 0);
-    expect(repo.progressOf('1-01').stars, 2);
+    expect(repo.progressOf('1-01').stars, 1);
     expect(repo.musicOn, isFalse);
   });
 
@@ -151,7 +248,7 @@ void main() {
     });
     repo = await ProgressRepository.open();
     expect(repo.moveSpeed, MoveSpeed.normal);
-    expect(repo.progressOf('1-01').stars, 2);
+    expect(repo.progressOf('1-01').stars, 1);
     SharedPreferences.setMockInitialValues({key: '{"moveSpeed":"warp"}'});
     repo = await ProgressRepository.open();
     expect(repo.moveSpeed, MoveSpeed.normal);
@@ -174,7 +271,7 @@ void main() {
       repo = await ProgressRepository.open();
       expect(repo.reduceEffects, isFalse);
       expect(repo.vibration, isTrue);
-      expect(repo.progressOf('1-01').stars, 2);
+      expect(repo.progressOf('1-01').stars, 1);
       SharedPreferences.setMockInitialValues({
         key: '{"reduceEffects":"yes","vibration":1}',
       });

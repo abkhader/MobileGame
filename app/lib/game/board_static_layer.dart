@@ -39,6 +39,10 @@ class BoardStaticLayer {
   final List<Offset> plateCenters = [];
   final List<Position> doorPositions = [];
 
+  /// Each spark's tile centre, in `level.sparks` order. Sparks change during
+  /// play, so they are drawn live, never into the image.
+  final List<Offset> sparkCenters = [];
+
   /// The full door bar, drawn in the open colour.
   final List<Rect> doorRects = [];
 
@@ -106,6 +110,9 @@ class BoardStaticLayer {
     doorRects.clear();
     doorTops.clear();
     doorBottoms.clear();
+    sparkCenters
+      ..clear()
+      ..addAll([for (final p in level.sparks) layout.centerOf(p)]);
     final doorW = cell * 0.3;
     for (var y = 0; y < level.height; y++) {
       for (var x = 0; x < level.width; x++) {

@@ -85,7 +85,7 @@ void main() {
 
   test('buildingsFor maps progress to building states', () async {
     final progress = await ProgressRepository.open();
-    await progress.recordCompletion('1-01', 3);
+    await progress.recordWin('1-01', score: 1, best: 1, sparkMask: 0x7);
     await progress.recordSkip('1-02');
     final buildings = buildingsFor(_ids, progress);
     expect(

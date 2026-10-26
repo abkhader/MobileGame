@@ -196,7 +196,8 @@ void main() {
       final audio = FakeAudioService();
       await _pumpGame(t, await _services(t, audio));
       await tapKey(t, LogicalKeyboardKey.arrowRight);
-      expect(audio.played, [Sfx.move]);
+      // Every floor tile of 1-01 holds a spark.
+      expect(audio.played, [Sfx.move, Sfx.spark]);
     });
   });
 
@@ -258,12 +259,33 @@ void main() {
       expect(seen, isEmpty);
     });
 
-    testWidgets('a plain step gives none', (t) async {
+    testWidgets('collecting a spark gives one medium impact', (t) async {
       final seen = await run(
         t,
         body: () => tapKey(t, LogicalKeyboardKey.arrowRight),
       );
+      expect(seen, [HapticKind.medium]);
+    });
+
+    testWidgets('a spark with vibration off gives none', (t) async {
+      final seen = await run(
+        t,
+        settings: {'vibration': false},
+        body: () => tapKey(t, LogicalKeyboardKey.arrowRight),
+      );
       expect(seen, isEmpty);
+    });
+
+    testWidgets('rewinding over a spark adds no impact', (t) async {
+      final seen = await run(
+        t,
+        body: () async {
+          await tapKey(t, LogicalKeyboardKey.arrowRight);
+          await tapKey(t, LogicalKeyboardKey.keyZ);
+          await t.pump(const Duration(milliseconds: 500));
+        },
+      );
+      expect(seen, [HapticKind.medium]);
     });
 
     testWidgets('winning gives a heavy impact', (t) async {

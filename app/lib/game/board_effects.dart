@@ -122,6 +122,67 @@ class FinishGlide extends OneShot {
   }
 }
 
+/// A collected spark bursting into a few motes of light. It waits [delay]
+/// seconds first (Pip is still gliding onto the tile), then plays 300 ms.
+/// The motes fly along fixed directions, so nothing is allocated per frame.
+class SparkBurst extends OneShot {
+  SparkBurst() : super(0.3);
+
+  static const motes = 6;
+
+  /// Unit directions of the motes, shared by every burst.
+  static final List<Offset> directions = List.generate(motes, (i) {
+    final a = 2 * math.pi * i / motes + math.pi / 6;
+    return Offset(math.cos(a), math.sin(a));
+  }, growable: false);
+
+  double _wait = 0;
+
+  /// Still waiting for Pip: the spark is drawn whole.
+  bool get waiting => active && _wait > 0;
+
+  void startAfter(double delay) {
+    _wait = math.max(0, delay);
+    start();
+  }
+
+  @override
+  void stop() {
+    _wait = 0;
+    super.stop();
+  }
+
+  @override
+  void update(double dt) {
+    if (!active) return;
+    if (_wait > 0) {
+      _wait -= dt;
+      if (_wait > 0) return;
+      dt = -_wait;
+      _wait = 0;
+    }
+    super.update(dt);
+  }
+}
+
+/// A spark coming back on a rewind: it grows in as the star flies back.
+class SparkReturn extends OneShot {
+  SparkReturn() : super(0.3);
+}
+
+/// The sparks' twinkle: each spark breathes on its own phase, only while
+/// time flows.
+class SparkTwinkle {
+  static const period = 1.4;
+
+  double _t = 0;
+
+  /// 0 to 1 for spark [i].
+  double at(int i) => 0.5 + 0.5 * math.sin(2 * math.pi * _t / period + i * 2.1);
+
+  void update(double dt) => _t = (_t + dt) % period;
+}
+
 /// [color] at 33 opacity steps, built once, so drawing a fading colour every
 /// frame allocates nothing.
 class AlphaRamp {
@@ -358,6 +419,11 @@ class BoardEffects {
   final Map<Position, PlateRipple> ripples = {};
   final List<TrailBuffer> ghostTrails = [];
   final List<Shimmer> shimmers = [];
+  final twinkle = SparkTwinkle();
+
+  /// One burst and one return per spark of the level, made once.
+  final List<SparkBurst> sparkBursts = [];
+  final List<SparkReturn> sparkReturns = [];
 
   /// Seconds of flowing time, for the echo flicker.
   double flicker = 0;
@@ -391,6 +457,26 @@ class BoardEffects {
     }
   }
 
+  /// Fresh burst and return slots for [count] sparks.
+  void resetSparks(int count) {
+    sparkBursts
+      ..clear()
+      ..addAll([for (var i = 0; i < count; i++) SparkBurst()]);
+    sparkReturns
+      ..clear()
+      ..addAll([for (var i = 0; i < count; i++) SparkReturn()]);
+  }
+
+  /// Ends every spark effect at once, e.g. on a restart.
+  void stopSparks() {
+    for (final b in sparkBursts) {
+      b.stop();
+    }
+    for (final r in sparkReturns) {
+      r.stop();
+    }
+  }
+
   void clearTrails() {
     for (final t in ghostTrails) {
       t.clear();
@@ -398,7 +484,8 @@ class BoardEffects {
   }
 
   /// Advances one-shots, door slides and echo trails. Looping effects (bob,
-  /// exit pulse, flicker, battery flash) run only while time [flowing].
+  /// exit pulse, flicker, spark twinkle, battery flash) run only while time
+  /// [flowing].
   void update(
     double dt, {
     required bool flowing,
@@ -411,6 +498,12 @@ class BoardEffects {
       d.update(dt);
     }
     for (final r in ripples.values) {
+      r.update(dt);
+    }
+    for (final b in sparkBursts) {
+      b.update(dt);
+    }
+    for (final r in sparkReturns) {
       r.update(dt);
     }
     for (var i = 0; i < ghostTrails.length && i < ghostTiles.length; i++) {
@@ -430,6 +523,7 @@ class BoardEffects {
       bob.update(dt);
       exitPulse.update(dt);
       flicker += dt;
+      twinkle.update(dt);
       batteryPhase = (batteryPhase + dt) % batteryFlashPeriod;
     }
   }
@@ -445,6 +539,12 @@ class BoardEffects {
     }
     for (final s in shimmers) {
       if (s.active) return true;
+    }
+    for (final b in sparkBursts) {
+      if (b.active) return true;
+    }
+    for (final r in sparkReturns) {
+      if (r.active) return true;
     }
     for (final t in ghostTrails) {
       if (!t.isEmpty) return true;

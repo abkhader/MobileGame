@@ -93,7 +93,7 @@ Future<void> _completeChapter1(WidgetTester t, AppServices services) async {
   final ids = (await t.runAsync(services.levels.levelIds))!;
   await t.runAsync(() async {
     for (final id in ids.where((id) => id.startsWith('1-'))) {
-      await services.progress.recordCompletion(id, 3);
+      await services.progress.recordWin(id, score: 1, best: 1, sparkMask: 0x7);
     }
   });
 }

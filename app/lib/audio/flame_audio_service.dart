@@ -16,6 +16,7 @@ class FlameAudioService implements AudioService {
     Sfx.runEnd: 'run_end.wav',
     Sfx.win: 'win.wav',
     Sfx.bump: 'bump.wav',
+    Sfx.spark: 'spark.wav',
   };
 
   Future<void>? _preload;
@@ -37,8 +38,8 @@ class FlameAudioService implements AudioService {
   static const _duckIn = Duration(milliseconds: 250);
   static const _duckOut = Duration(milliseconds: 150);
 
-  /// Sounds that fire every beat get a pool, not a new player each time.
-  static const _pooled = {Sfx.move, Sfx.bump};
+  /// Sounds that can fire every beat get a pool, not a new player each time.
+  static const _pooled = {Sfx.move, Sfx.bump, Sfx.spark};
 
   double get _targetVolume => _frozen ? _musicVolume * _duck : _musicVolume;
 

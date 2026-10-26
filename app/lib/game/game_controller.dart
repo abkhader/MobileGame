@@ -36,6 +36,19 @@ class GameController extends ChangeNotifier {
         )
       : null;
 
+  /// Bit i set while this play holds spark i (in `level.sparks` order).
+  int get sparkMask => sparkMaskOf(_state);
+
+  /// The spark bits [s] holds.
+  int sparkMaskOf(GameState s) {
+    final sparks = level.sparks;
+    var mask = 0;
+    for (var i = 0; i < sparks.length; i++) {
+      if (s.collected.contains(sparks[i])) mask |= 1 << i;
+    }
+    return mask;
+  }
+
   /// True when [m] would leave Pip in place (wall, closed door, edge). Uses
   /// the rules' own logic. Waiting is never blocked, and nothing is once the
   /// level is won or lost (the rules refuse to step then).

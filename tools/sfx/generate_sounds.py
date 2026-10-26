@@ -85,6 +85,23 @@ def bump():
     return fade(out, 0.002, 0.012)
 
 
+def spark():
+    # A bright, short chime: two quick rising bell notes (G6 then D7) with
+    # a soft octave shimmer, ringing out fast.
+    out = []
+    for start, freq in ((0.0, 1568.0), (0.045, 2349.0)):
+        begin = seconds(start)
+        n = seconds(0.22)
+        while len(out) < begin + n:
+            out.append(0.0)
+        for i in range(n):
+            env = math.exp(-22 * i / RATE)
+            out[begin + i] += 0.28 * env * (
+                sine(freq, i) + 0.35 * sine(freq * 2, i)
+                + 0.12 * sine(freq * 3, i))
+    return fade(out, 0.002, 0.03)
+
+
 def rewind():
     # A rising 0.6 s sweep, 300 -> 900 Hz. The mean frequency (600 Hz) over
     # 0.6 s is a whole number of cycles, and the swell starts and ends at the
@@ -141,6 +158,7 @@ def main():
     write('run_end', run_end())
     write('win', win())
     write('bump', bump())
+    write('spark', spark())
     write('rewind', rewind())
     write('ambient', ambient())
 

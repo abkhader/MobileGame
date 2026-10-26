@@ -69,6 +69,41 @@ void main() {
     expect(soundsFor(start, start, GameEvent.none), isEmpty);
   });
 
+  group('sparks', () {
+    // Sparks at x=2 and x=4 on one row; the exit at x=5.
+    final level = LevelLoader.fromMap({
+      'id': '9-99',
+      'name': 'Sparks',
+      'runLimit': 1,
+      'grid': ['#######', '#S*.*E#', '#######'],
+    });
+    final s0 = GameState.initial(level);
+
+    test('collecting a spark plays move then spark, once', () {
+      final s1 = Rules.step(s0, Move.right);
+      expect(s1.collected, isNotEmpty);
+      expect(soundsFor(s0, s1, GameEvent.moved), [Sfx.move, Sfx.spark]);
+      // Standing on it again collects nothing new.
+      final s2 = Rules.step(s1, Move.wait);
+      expect(soundsFor(s1, s2, GameEvent.moved), [Sfx.move]);
+    });
+
+    test('a winning step that collects plays the spark too', () {
+      final before = Rules.step(Rules.step(s0, Move.right), Move.right);
+      final at = Rules.step(before, Move.right);
+      expect(soundsFor(before, at, GameEvent.moved), [Sfx.move, Sfx.spark]);
+      final won = Rules.step(at, Move.right);
+      expect(won.status, GameStatus.won);
+      expect(soundsFor(at, won, GameEvent.won), [Sfx.move, Sfx.win]);
+    });
+
+    test('a rewind or restart that drops a spark is silent', () {
+      final s1 = Rules.step(s0, Move.right);
+      expect(soundsFor(s1, s0, GameEvent.none), isEmpty);
+      expect(soundsFor(s1, s0, GameEvent.restarted), isEmpty);
+    });
+  });
+
   test('restarted plays nothing', () {
     expect(soundsFor(start, start, GameEvent.restarted), isEmpty);
   });

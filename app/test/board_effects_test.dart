@@ -219,4 +219,56 @@ void main() {
       expect(fx.winLight(reduceEffects: true), steady);
     });
   });
+
+  group('sparks', () {
+    void tick(BoardEffects fx, double dt, {bool flowing = false}) => fx.update(
+      dt,
+      flowing: flowing,
+      ghostTiles: const [],
+      reduceEffects: false,
+    );
+
+    test('a burst waits for Pip, plays 300 ms, and is busy only then', () {
+      final fx = BoardEffects()..resetSparks(3);
+      expect(fx.busy, isFalse);
+      fx.sparkBursts[1].startAfter(0.1);
+      expect(fx.sparkBursts[1].waiting, isTrue);
+      expect(fx.busy, isTrue);
+      tick(fx, 0.15);
+      expect(fx.sparkBursts[1].waiting, isFalse);
+      expect(fx.sparkBursts[1].progress, closeTo(0.05 / 0.3, 1e-9));
+      tick(fx, 0.3);
+      expect(fx.sparkBursts[1].active, isFalse);
+      expect(fx.busy, isFalse);
+    });
+
+    test('a return grows in over 300 ms; stopSparks ends everything', () {
+      final fx = BoardEffects()..resetSparks(3);
+      fx.sparkReturns[0].start();
+      fx.sparkBursts[2].startAfter(0.1);
+      tick(fx, 0.15);
+      expect(fx.sparkReturns[0].progress, closeTo(0.5, 1e-9));
+      fx.stopSparks();
+      expect(fx.busy, isFalse);
+      expect(fx.sparkBursts[2].waiting, isFalse);
+    });
+
+    test('the twinkle moves only while time flows and never keeps it busy', () {
+      final fx = BoardEffects()..resetSparks(3);
+      final a = fx.twinkle.at(0);
+      tick(fx, 0.3);
+      expect(fx.twinkle.at(0), a);
+      tick(fx, 0.3, flowing: true);
+      expect(fx.twinkle.at(0), isNot(a));
+      expect(fx.busy, isFalse);
+    });
+
+    test('burst directions are fixed unit vectors', () {
+      expect(SparkBurst.directions, hasLength(SparkBurst.motes));
+      for (final d in SparkBurst.directions) {
+        expect(d.distance, closeTo(1, 1e-9));
+      }
+      expect(identical(SparkBurst.directions, SparkBurst.directions), isTrue);
+    });
+  });
 }

@@ -69,7 +69,7 @@ Future<void> _completeChapter(
   final ids = (await t.runAsync(services.levels.levelIds))!;
   await t.runAsync(() async {
     for (final id in ids.where((id) => id.startsWith('$chapter-'))) {
-      await services.progress.recordCompletion(id, 3);
+      await services.progress.recordWin(id, score: 1, best: 1, sparkMask: 0x7);
     }
   });
 }
@@ -89,7 +89,10 @@ void main() {
   testWidgets('a completion lights the building with its stars', (t) async {
     final services = await _services(t);
     await _pumpMap(t, services);
-    await t.runAsync(() => services.progress.recordCompletion('1-01', 2));
+    await t.runAsync(
+      () =>
+          services.progress.recordWin('1-01', score: 1, best: 1, sparkMask: 0),
+    );
     await t.pump(_frame);
     expect(find.bySemanticsLabel('Level 1, solved, 2 stars'), findsOneWidget);
     expect(find.bySemanticsLabel('Level 2, open'), findsOneWidget);

@@ -218,7 +218,12 @@ void main() {
     // Unlock the last level by completing every earlier one.
     await t.runAsync(() async {
       for (final id in ids.take(ids.length - 1)) {
-        await services.progress.recordCompletion(id, 3);
+        await services.progress.recordWin(
+          id,
+          score: 1,
+          best: 1,
+          sparkMask: 0x7,
+        );
       }
     });
     await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));

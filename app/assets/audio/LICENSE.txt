@@ -3,5 +3,6 @@ dedicated to the public domain under CC0 1.0 Universal
 (https://creativecommons.org/publicdomain/zero/1.0/).
 
 Files: move.wav, plate.wav, door.wav, run_end.wav, win.wav, ambient.wav,
-bump.wav (a soft push tick) and rewind.wav (a rising, loopable 0.6 s sweep).
+bump.wav (a soft push tick), spark.wav (a bright, short chime for a collected
+spark) and rewind.wav (a rising, loopable 0.6 s sweep).
 All are generated, deterministically, by the script and are CC0 1.0.

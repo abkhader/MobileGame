@@ -1,5 +1,5 @@
 /// The short sound effects the game can play.
-enum Sfx { move, plate, door, runEnd, win, bump }
+enum Sfx { move, plate, door, runEnd, win, bump, spark }
 
 /// Plays the game's sound effects and background music.
 abstract interface class AudioService {

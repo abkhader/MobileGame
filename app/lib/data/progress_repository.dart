@@ -5,11 +5,70 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../game/game_clock.dart';
 
+/// One level's saved result. Stars are kept across plays: one for
+/// finishing, one for all three sparks (each remembered once collected in a
+/// won play), one for a play in the best number of moves or fewer.
 class LevelProgress {
-  const LevelProgress({this.completed = false, this.stars = 0});
+  const LevelProgress({
+    this.completed = false,
+    this.finished = false,
+    this.sparkMask = 0,
+    this.movesStar = false,
+  });
 
+  /// Won or skipped: the next level is unlocked.
   final bool completed;
-  final int stars;
+
+  /// Won at least once (a skip does not count).
+  final bool finished;
+
+  /// Bit i set: spark i (in `Level.sparks` order) was collected in a won play.
+  final int sparkMask;
+
+  /// Won at least once in bestScore moves or fewer.
+  final bool movesStar;
+
+  static const allSparks = 0x7;
+
+  bool get allSparksStar => sparkMask == allSparks;
+
+  /// The three goals in display order.
+  ({bool finished, bool allSparks, bool moves}) get goals =>
+      (finished: finished, allSparks: allSparksStar, moves: movesStar);
+
+  /// 0–3.
+  int get stars =>
+      (finished ? 1 : 0) + (allSparksStar ? 1 : 0) + (movesStar ? 1 : 0);
+
+  /// How many sparks are saved, 0–3.
+  int get sparkCount => _bitCount(sparkMask);
+}
+
+int _bitCount(int mask) => (mask & 1) + ((mask >> 1) & 1) + ((mask >> 2) & 1);
+
+/// Reads one saved level entry; anything unexpected falls back to defaults.
+/// Old saves stored only `{'stars': n}` (a skip stored 0, a win 1–3, and 3
+/// meant score <= best).
+LevelProgress _entryFromJson(Map<String, dynamic> entry) {
+  final isNew =
+      entry.containsKey('completed') ||
+      entry.containsKey('finished') ||
+      entry.containsKey('sparks') ||
+      entry.containsKey('moves');
+  if (!isNew) {
+    final s = entry['stars'];
+    final n = s is int ? s.clamp(0, 3) : 0;
+    return LevelProgress(completed: true, finished: n > 0, movesStar: n == 3);
+  }
+  final sparks = entry['sparks'];
+  return LevelProgress(
+    completed: true,
+    finished: entry['finished'] == true,
+    sparkMask: sparks is int && sparks >= 0 && sparks <= LevelProgress.allSparks
+        ? sparks
+        : 0,
+    movesStar: entry['moves'] == true,
+  );
 }
 
 /// Stars, unlocks and settings, persisted as one JSON string.
@@ -17,7 +76,7 @@ class LevelProgress {
 class ProgressRepository extends ChangeNotifier {
   ProgressRepository._(
     this._prefs,
-    this._stars,
+    this._levels,
     this._musicOn,
     this._sfxOn,
     this._seenChapters,
@@ -32,7 +91,7 @@ class ProgressRepository extends ChangeNotifier {
 
   final SharedPreferences _prefs;
   // Presence of a key means the level is completed.
-  final Map<String, int> _stars;
+  final Map<String, LevelProgress> _levels;
   bool _musicOn;
   bool _sfxOn;
   final Set<int> _seenChapters;
@@ -44,7 +103,7 @@ class ProgressRepository extends ChangeNotifier {
 
   static Future<ProgressRepository> open() async {
     final prefs = await SharedPreferences.getInstance();
-    final stars = <String, int>{};
+    final saved = <String, LevelProgress>{};
     var musicOn = true;
     var sfxOn = true;
     final seenChapters = <int>{};
@@ -62,8 +121,7 @@ class ProgressRepository extends ChangeNotifier {
           if (levels is Map<String, dynamic>) {
             levels.forEach((id, entry) {
               if (entry is Map<String, dynamic>) {
-                final s = entry['stars'];
-                stars[id] = s is int ? s.clamp(0, 3) : 0;
+                saved[id] = _entryFromJson(entry);
               }
             });
           }
@@ -92,7 +150,7 @@ class ProgressRepository extends ChangeNotifier {
         }
       }
     } catch (_) {
-      stars.clear();
+      saved.clear();
       musicOn = true;
       sfxOn = true;
       seenChapters.clear();
@@ -104,7 +162,7 @@ class ProgressRepository extends ChangeNotifier {
     }
     return ProgressRepository._(
       prefs,
-      stars,
+      saved,
       musicOn,
       sfxOn,
       seenChapters,
@@ -132,29 +190,46 @@ class ProgressRepository extends ChangeNotifier {
 
   bool seenChapterIntro(int chapter) => _seenChapters.contains(chapter);
 
-  LevelProgress progressOf(String id) {
-    final s = _stars[id];
-    return s == null
-        ? const LevelProgress()
-        : LevelProgress(completed: true, stars: s);
+  LevelProgress progressOf(String id) => _levels[id] ?? const LevelProgress();
+
+  /// Sparks saved across all levels.
+  int get totalSparks {
+    var n = 0;
+    for (final p in _levels.values) {
+      n += p.sparkCount;
+    }
+    return n;
   }
 
   bool isUnlocked(String id, List<String> orderedIds) {
     final i = orderedIds.indexOf(id);
     if (i < 0) return false;
     if (i == 0) return true;
-    return _stars.containsKey(orderedIds[i - 1]);
+    return _levels.containsKey(orderedIds[i - 1]);
   }
 
-  Future<void> recordCompletion(String id, int stars) {
-    final clamped = stars.clamp(0, 3);
-    final prev = _stars[id] ?? 0;
-    _stars[id] = clamped > prev ? clamped : prev;
+  /// A won play: finished, its sparks added to the saved ones (bit i is
+  /// spark i in `Level.sparks` order), and the moves star when [score] is at
+  /// most [best]. Goals once earned are never lost.
+  Future<void> recordWin(
+    String id, {
+    required int score,
+    required int best,
+    required int sparkMask,
+  }) {
+    final prev = progressOf(id);
+    _levels[id] = LevelProgress(
+      completed: true,
+      finished: true,
+      sparkMask: prev.sparkMask | (sparkMask & LevelProgress.allSparks),
+      movesStar: prev.movesStar || score <= best,
+    );
     return _save();
   }
 
+  /// Unlocks the next level without earning any star.
   Future<void> recordSkip(String id) {
-    _stars.putIfAbsent(id, () => 0);
+    _levels.putIfAbsent(id, () => const LevelProgress(completed: true));
     return _save();
   }
 
@@ -201,7 +276,13 @@ class ProgressRepository extends ChangeNotifier {
   Future<void> _save() async {
     final json = jsonEncode({
       'levels': {
-        for (final e in _stars.entries) e.key: {'stars': e.value},
+        for (final e in _levels.entries)
+          e.key: {
+            'completed': true,
+            'finished': e.value.finished,
+            'sparks': e.value.sparkMask,
+            'moves': e.value.movesStar,
+          },
       },
       'musicOn': _musicOn,
       'sfxOn': _sfxOn,

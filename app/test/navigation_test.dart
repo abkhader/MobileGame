@@ -75,7 +75,7 @@ Future<void> _winLevel1(WidgetTester t) async {
   await t.pump(const Duration(milliseconds: 500));
 }
 
-/// Delegates to a real repository but holds recordCompletion on [gate].
+/// Delegates to a real repository but holds recordWin on [gate].
 class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   _GatedProgress(this._inner);
 
@@ -83,10 +83,18 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   final gate = Completer<void>();
 
   @override
-  Future<void> recordCompletion(String id, int stars) async {
+  Future<void> recordWin(
+    String id, {
+    required int score,
+    required int best,
+    required int sparkMask,
+  }) async {
     await gate.future;
-    await _inner.recordCompletion(id, stars);
+    await _inner.recordWin(id, score: score, best: best, sparkMask: sparkMask);
   }
+
+  @override
+  int get totalSparks => _inner.totalSparks;
 
   @override
   void addListener(VoidCallback listener) => _inner.addListener(listener);
@@ -151,7 +159,9 @@ Future<void> _completeFirst(
 ) async {
   final ids = await _levelIds(t);
   for (final id in ids.take(count)) {
-    await t.runAsync(() => services.progress.recordCompletion(id, 3));
+    await t.runAsync(
+      () => services.progress.recordWin(id, score: 1, best: 1, sparkMask: 0x7),
+    );
   }
 }
 
@@ -328,7 +338,8 @@ void main() {
     expect(_locked, findsNWidgets(ids.length - 3));
     expect(find.bySemanticsLabel('Level 3, open'), findsOneWidget);
     expect(find.bySemanticsLabel('Level 1, solved, 3 stars'), findsOneWidget);
-    expect(find.bySemanticsLabel('Level 2, solved, 3 stars'), findsOneWidget);
+    // Four moves right on 1-02 skips its detour spark: no spark star.
+    expect(find.bySemanticsLabel('Level 2, solved, 2 stars'), findsOneWidget);
   });
 
   testWidgets('a win with the overflow menu open replaces the game route', (

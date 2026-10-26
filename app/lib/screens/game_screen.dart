@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Picture, PictureRecorder, PointMode;
 
@@ -8,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../app_services.dart';
 import '../art/pip.dart';
+import '../art/spark_star.dart';
 import '../audio/audio_service.dart';
 import '../audio/game_sounds.dart';
 import '../game/echo_board.dart';
@@ -57,6 +59,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Timer? _tipTimer;
   // Latched by the first beat: the 1-01 thumb hint never comes back.
   bool _moved = false;
+  // The spark fly: from a tile to the HUD counter and back, drawn over the
+  // whole column.
+  final _flyLayerKey = GlobalKey();
+  final _flyKey = GlobalKey<_SparkFlyState>();
+  final _gameKey = GlobalKey();
+  final _counterKey = GlobalKey();
 
   @visibleForTesting
   GameController? get controllerForTesting => _controller;
@@ -108,7 +116,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _onChanged() {
     final c = _controller!;
+    final before = _lastState!;
     _playSounds(c);
+    _flySparks(c, before);
     if (c.lastEvent == GameEvent.won && _winTimer == null) {
       _winTimer = Timer(_winDelay, () {
         if (!mounted) return;
@@ -198,7 +208,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     if (services.progress.vibration) {
       if (c.lastEvent == GameEvent.won) {
         Haptics.play(HapticKind.heavy);
-      } else if (sounds.contains(Sfx.plate)) {
+      } else if (sounds.contains(Sfx.plate) || sounds.contains(Sfx.spark)) {
         Haptics.play(HapticKind.medium);
       }
     }
@@ -207,6 +217,76 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       unawaited(services.audio.playSfx(sfx).catchError((_) {}));
     }
   }
+
+  static const _flyIn = Duration(milliseconds: 400);
+  static const _flyBack = Duration(milliseconds: 300);
+  static const _flyFade = Duration(milliseconds: 150);
+
+  /// A grabbed spark flies to the counter; one a rewind drops flies back to
+  /// its tile. A restart puts every spark back without a flight.
+  void _flySparks(GameController c, GameState before) {
+    final fly = _flyKey.currentState;
+    if (fly == null) return;
+    if (c.lastEvent == GameEvent.restarted) {
+      fly.cancel();
+      return;
+    }
+    final was = c.sparkMaskOf(before);
+    final now = c.sparkMask;
+    if (was == now) return;
+    final reduce = _reduce;
+    for (var i = 0; i < c.level.sparks.length; i++) {
+      final bit = 1 << i;
+      if (was & bit == now & bit) continue;
+      final ends = _flyEnds(i);
+      if (ends == null) continue;
+      final (tile, hud, radius) = ends;
+      final collect = now & bit != 0;
+      final from = collect ? tile : hud;
+      final to = collect ? hud : tile;
+      if (reduce) {
+        fly.fly(to, to, _hudStarRadius, _hudStarRadius, _flyFade, fade: true);
+      } else {
+        fly.fly(
+          from,
+          to,
+          collect ? radius : _hudStarRadius,
+          collect ? _hudStarRadius : radius,
+          collect ? _flyIn : _flyBack,
+        );
+      }
+    }
+  }
+
+  static const _hudStarRadius = 7.0;
+
+  /// Spark [i]'s tile centre, the counter's star and the board's spark
+  /// radius, in the fly layer's coordinates; null before layout.
+  (Offset, Offset, double)? _flyEnds(int i) {
+    final board = _board;
+    final layer = _flyLayerKey.currentContext?.findRenderObject();
+    final game = _gameKey.currentContext?.findRenderObject();
+    final counter = _counterKey.currentContext?.findRenderObject();
+    if (board == null ||
+        layer is! RenderBox ||
+        game is! RenderBox ||
+        counter is! RenderBox ||
+        !layer.hasSize ||
+        !game.hasSize ||
+        !counter.hasSize) {
+      return null;
+    }
+    final center = board.sparkCenter(i);
+    if (center == null) return null;
+    final tile = layer.globalToLocal(game.localToGlobal(center));
+    final h = counter.size.height / 2;
+    final hud = layer.globalToLocal(counter.localToGlobal(Offset(h, h)));
+    return (tile, hud, board.cellSize * 0.2);
+  }
+
+  bool get _reduce =>
+      widget.services.progress.reduceEffects ||
+      MediaQuery.disableAnimationsOf(context);
 
   /// A push: a soft tick and a light buzz.
   void _onBump() {
@@ -298,12 +378,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final services = widget.services;
     final levelId = widget.levelId;
     final score = c.state.score;
-    final stars = c.stars!;
     final best = c.level.bestScore ?? score;
+    final sparkMask = c.sparkMask;
     // Replace this route explicitly: a menu may sit above it.
     final route = ModalRoute.of(context)!;
     final navigator = Navigator.of(context);
-    await services.progress.recordCompletion(levelId, stars);
+    await services.progress.recordWin(
+      levelId,
+      score: score,
+      best: best,
+      sparkMask: sparkMask,
+    );
+    // The level's kept stars, earned in this play or before.
+    final stars = services.progress.progressOf(levelId).stars;
     services.completedThisSession++;
     if (!mounted) return;
     // Close any open menu or dialog above this route first.
@@ -394,15 +481,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         _wake();
         return result;
       },
-      child: _buildColumn(context, c),
+      child: Stack(
+        key: _flyLayerKey,
+        children: [
+          _buildColumn(context, c),
+          Positioned.fill(
+            child: IgnorePointer(child: _SparkFly(key: _flyKey)),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildColumn(BuildContext context, GameController c) {
     final state = c.state;
-    final reduce =
-        widget.services.progress.reduceEffects ||
-        MediaQuery.disableAnimationsOf(context);
+    final reduce = _reduce;
     _board!.reduceEffects = reduce;
     final tip = c.level.tip;
     final textTheme = Theme.of(context).textTheme;
@@ -413,7 +506,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _RunDots(runIndex: state.runIndex, runLimit: c.level.runLimit),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _RunDots(
+                    runIndex: state.runIndex,
+                    runLimit: c.level.runLimit,
+                  ),
+                  const SizedBox(width: 16),
+                  _SparkCounter(
+                    key: _counterKey,
+                    count: state.collected.length,
+                    total: c.level.sparks.length,
+                  ),
+                ],
+              ),
               // The battery is drawn as a ring above Pip; screen readers
               // still get the exact count here.
               Semantics(
@@ -451,7 +558,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   flow: _flow!,
                   onChanged: _wake,
                   // The screen's Focus takes the keys; Flame would eat them.
-                  child: GameWidget(game: _board!, autofocus: false),
+                  child: KeyedSubtree(
+                    key: _gameKey,
+                    child: GameWidget(game: _board!, autofocus: false),
+                  ),
                 ),
               ),
               if (!reduce) ...[
@@ -916,6 +1026,132 @@ class _RunDotsPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RunDotsPainter old) =>
       old.runIndex != runIndex || old.runLimit != runLimit;
+}
+
+/// "✦ n / 3": the sparks grabbed in this play.
+class _SparkCounter extends StatelessWidget {
+  const _SparkCounter({required this.count, required this.total, super.key});
+
+  final int count;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Sparks, $count of $total',
+    excludeSemantics: true,
+    child: Text(
+      '✦ $count / $total',
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: palette.spark,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+}
+
+/// One golden star flying between a tile and the counter. Built only while
+/// a flight runs: one controller, one small painter in its own layer.
+class _SparkFly extends StatefulWidget {
+  const _SparkFly({super.key});
+
+  @override
+  State<_SparkFly> createState() => _SparkFlyState();
+}
+
+typedef _Flight = ({Offset from, Offset to, double r0, double r1, bool fade});
+
+class _SparkFlyState extends State<_SparkFly>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(vsync: this)
+    ..addStatusListener(_onStatus);
+
+  _Flight? _flight;
+
+  void _onStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted) {
+      setState(() => _flight = null);
+    }
+  }
+
+  /// Starts a flight, replacing any running one. With [fade] the star stays
+  /// at [to] and fades out.
+  void fly(
+    Offset from,
+    Offset to,
+    double r0,
+    double r1,
+    Duration duration, {
+    bool fade = false,
+  }) {
+    setState(() {
+      _flight = (from: from, to: to, r0: r0, r1: r1, fade: fade);
+    });
+    _controller
+      ..duration = duration
+      ..forward(from: 0);
+  }
+
+  void cancel() {
+    _controller.stop();
+    if (_flight != null) setState(() => _flight = null);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final flight = _flight;
+    if (flight == null) return const SizedBox.shrink();
+    return RepaintBoundary(
+      child: CustomPaint(
+        key: const Key('spark-fly'),
+        size: Size.infinite,
+        painter: _SparkFlyPainter(_controller, flight),
+      ),
+    );
+  }
+}
+
+class _SparkFlyPainter extends CustomPainter {
+  _SparkFlyPainter(this.progress, this.flight) : super(repaint: progress);
+
+  final Animation<double> progress;
+  final _Flight flight;
+
+  static final _paint = Paint();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = progress.value;
+    final double alpha;
+    final Offset at;
+    if (flight.fade) {
+      alpha = 1 - t;
+      at = flight.to;
+    } else {
+      final k = Curves.easeInOutCubic.transform(t);
+      // A gentle arc upward on the way.
+      final lift = -math.sin(math.pi * k) * 24;
+      at = Offset.lerp(flight.from, flight.to, k)! + Offset(0, lift);
+      alpha = t < 0.85 ? 1 : (1 - t) / 0.15 * 0.5 + 0.5;
+    }
+    final r = flight.r0 + (flight.r1 - flight.r0) * t;
+    _paint.color = palette.spark.withValues(alpha: alpha.clamp(0.0, 1.0));
+    canvas
+      ..save()
+      ..translate(at.dx, at.dy)
+      ..scale(r)
+      ..drawPath(unitSparkStar, _paint)
+      ..restore();
+  }
+
+  @override
+  bool shouldRepaint(_SparkFlyPainter old) =>
+      old.progress != progress || old.flight != flight;
 }
 
 class _LoadErrorCard extends StatelessWidget {

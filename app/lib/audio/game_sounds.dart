@@ -11,6 +11,7 @@ List<Sfx> soundsFor(GameState before, GameState after, GameEvent event) {
         Sfx.move,
         if (_plateNewlyOccupied(before, after)) Sfx.plate,
         if (!_sameDoors(before, after)) Sfx.door,
+        if (_sparkCollected(before, after)) Sfx.spark,
       ];
     case GameEvent.runEnded:
     case GameEvent.lost:
@@ -33,6 +34,11 @@ Set<Position> _occupiedPlates(GameState s) {
 
 bool _plateNewlyOccupied(GameState before, GameState after) =>
     _occupiedPlates(after).difference(_occupiedPlates(before)).isNotEmpty;
+
+/// Pip grabbed a spark on this beat. Rewinds and restarts only ever drop
+/// sparks, so they never match.
+bool _sparkCollected(GameState before, GameState after) =>
+    after.collected.length > before.collected.length;
 
 bool _sameDoors(GameState a, GameState b) =>
     a.openDoors.length == b.openDoors.length &&

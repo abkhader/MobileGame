@@ -6,6 +6,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart';
 
 import '../art/pip.dart';
+import '../art/spark_star.dart';
 import '../hints/hint_service.dart';
 import 'board_effects.dart';
 import 'board_layout.dart';
@@ -88,6 +89,12 @@ class EchoBoard extends FlameGame {
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
   final _flashPaint = Paint();
+  final _sparkPaint = Paint();
+  final _sparkCorePaint = Paint();
+  final _sparkGlowPaint = Paint();
+  final _motePaint = Paint();
+  static final _sparkRamp = AlphaRamp(palette.spark);
+  static final _sparkCoreRamp = AlphaRamp(palette.sparkCore);
   static final _echoRamps = [for (final c in palette.ghostColors) AlphaRamp(c)];
   static final _playerRamp = AlphaRamp(palette.player);
   static final _exitRamp = AlphaRamp(palette.exit);
@@ -113,6 +120,7 @@ class EchoBoard extends FlameGame {
   final PipMotion _pip;
   final _fx = BoardEffects();
   Set<Position> _pressed = const {};
+  int _sparkMask = 0;
   bool _wasSettled = true;
   int _run = 0;
 
@@ -159,6 +167,26 @@ class EchoBoard extends FlameGame {
   (double, double) get batteryRingForTesting =>
       (_layer.ringRect.width / 2 / _cell, _ringPaint.strokeWidth / _cell);
 
+  /// Spark [i] is drawn on its tile (not yet collected, or Pip is still
+  /// gliding onto it).
+  @visibleForTesting
+  bool sparkVisibleForTesting(int i) => _sparkDrawn(i);
+
+  /// A collect burst is playing (or waiting for Pip to arrive).
+  @visibleForTesting
+  bool get sparkBurstActiveForTesting => _fx.sparkBursts.any((b) => b.active);
+
+  /// Spark [i]'s centre in the board's logical px, or null before layout.
+  Offset? sparkCenter(int i) {
+    final layout = _layer.layout;
+    final sparks = controller.level.sparks;
+    if (layout == null || i < 0 || i >= sparks.length) return null;
+    return layout.centerOf(sparks[i]);
+  }
+
+  /// One tile's size in logical px, or 0 before layout.
+  double get cellSize => _layer.layout?.cellSize ?? 0;
+
   @visibleForTesting
   double get pipLeanForTesting => _pip.lean;
 
@@ -202,6 +230,8 @@ class EchoBoard extends FlameGame {
     }
     _fx.ripples.clear();
     _pressed = _pressedPlates(state);
+    _fx.resetSparks(level.sparks.length);
+    _sparkMask = controller.sparkMask;
     _fx.resetEchoes(state.ghostPositions.length);
     _pip.reset();
     _fx.winFlash.stop();
@@ -229,6 +259,29 @@ class EchoBoard extends FlameGame {
       }
     }
     _pressed = pressed;
+
+    // Sparks: a new one bursts as Pip lands on it; one dropped by a rewind
+    // grows back in; a restart just puts them all back.
+    final mask = controller.sparkMask;
+    if (event == GameEvent.restarted) {
+      _fx.stopSparks();
+    } else if (!_reduceEffects && mask != _sparkMask) {
+      // Sparks are only grabbed by a forward step: wait until Pip is half
+      // way onto the tile.
+      final delay =
+          _beatLength().inMicroseconds / Duration.microsecondsPerSecond / 2;
+      for (var i = 0; i < _fx.sparkBursts.length; i++) {
+        final bit = 1 << i;
+        if (mask & bit != 0 && _sparkMask & bit == 0) {
+          _fx.sparkReturns[i].stop();
+          _fx.sparkBursts[i].startAfter(delay);
+        } else if (mask & bit == 0 && _sparkMask & bit != 0) {
+          _fx.sparkBursts[i].stop();
+          _fx.sparkReturns[i].start();
+        }
+      }
+    }
+    _sparkMask = mask;
 
     if (runChanged) {
       // Echoes new to this run shimmer in.
@@ -432,6 +485,7 @@ class EchoBoard extends FlameGame {
 
     _drawPlates(canvas, cell);
     _drawDoors(canvas);
+    _drawSparks(canvas, cell);
 
     final hint = _hintSteps;
     if (hint != null && hint.isNotEmpty) _drawHint(canvas, layout, hint, cell);
@@ -475,6 +529,66 @@ class EchoBoard extends FlameGame {
       _flashPaint.color = _exitRamp.at(light);
       canvas.drawRect(_layer.bounds, _flashPaint);
     }
+  }
+
+  bool _sparkDrawn(int i) {
+    final collected = _sparkMask & (1 << i) != 0;
+    return !collected || _fx.sparkBursts[i].waiting;
+  }
+
+  /// Uncollected sparks twinkle on their tiles (steady with reduced
+  /// effects); a collected one bursts into motes. Paths and paints are
+  /// cached: nothing is allocated here.
+  void _drawSparks(Canvas canvas, double cell) {
+    final centers = _layer.sparkCenters;
+    final fx = !_reduceEffects;
+    final r = cell * 0.2;
+    for (var i = 0; i < centers.length && i < _fx.sparkBursts.length; i++) {
+      final center = centers[i];
+      if (_sparkDrawn(i)) {
+        var alpha = 1.0;
+        var scale = 1.0;
+        if (fx) {
+          final k = _fx.twinkle.at(i);
+          alpha = 0.7 + 0.3 * k;
+          scale = 0.88 + 0.14 * k;
+          final back = _fx.sparkReturns[i];
+          if (back.active) {
+            alpha *= back.progress;
+            scale *= 0.4 + 0.6 * back.progress;
+          }
+        }
+        _drawStar(canvas, center, r * scale, alpha);
+        continue;
+      }
+      final burst = _fx.sparkBursts[i];
+      if (!burst.active) continue;
+      final k = burst.progress;
+      // The star pops (grows and fades) while motes fly out.
+      if (k < 0.4) _drawStar(canvas, center, r * (1 + k * 1.5), 1 - k / 0.4);
+      final out = 1 - (1 - k) * (1 - k);
+      _motePaint.color = _sparkCoreRamp.at(1 - k);
+      final dist = cell * (0.12 + 0.38 * out);
+      final mote = cell * 0.05 * (1 - 0.6 * k);
+      for (final d in SparkBurst.directions) {
+        canvas.drawCircle(center + d * dist, mote, _motePaint);
+      }
+    }
+  }
+
+  void _drawStar(Canvas canvas, Offset center, double r, double alpha) {
+    _sparkGlowPaint.color = _sparkRamp.at(0.22 * alpha);
+    canvas.drawCircle(center, r * 1.15, _sparkGlowPaint);
+    _sparkPaint.color = _sparkRamp.at(alpha);
+    _sparkCorePaint.color = _sparkCoreRamp.at(alpha);
+    canvas
+      ..save()
+      ..translate(center.dx, center.dy)
+      ..scale(r)
+      ..drawPath(unitSparkStar, _sparkPaint)
+      ..scale(0.45)
+      ..drawPath(unitSparkStar, _sparkCorePaint)
+      ..restore();
   }
 
   /// A glowing dotted path; a push is an arrow against the obstacle and a

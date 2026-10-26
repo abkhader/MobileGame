@@ -51,11 +51,17 @@ Future<void> _step(WidgetTester t) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('a step on 1-01 plays move', (t) async {
+  testWidgets('a step onto a spark on 1-01 plays move and spark once', (
+    t,
+  ) async {
     final audio = FakeAudioService();
     await _pumpGame(t, await _services(t, audio));
     await _step(t);
-    expect(audio.played, [Sfx.move]);
+    expect(audio.played, [Sfx.move, Sfx.spark]);
+    // Rewinding over it is silent.
+    await tapKey(t, LogicalKeyboardKey.keyZ);
+    await t.pump(const Duration(milliseconds: 500));
+    expect(audio.played, [Sfx.move, Sfx.spark]);
   });
 
   testWidgets('winning 1-01 plays win', (t) async {
