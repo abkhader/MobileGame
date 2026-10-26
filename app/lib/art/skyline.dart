@@ -91,8 +91,8 @@ void paintSkyline(
 
 /// Where the spark lights go: one point per remembered spark, above its
 /// building and fixed by building index, spark index and [seed]. The skyline
-/// is drawn from a cached picture, so this costs nothing per frame; tests
-/// read it to count the lights.
+/// is static: its CustomPainter repaints only when a building's state, stars
+/// or sparks change, never per frame. Tests read this to count the lights.
 @visibleForTesting
 List<Offset> skylineSparkLights(
   Size size,
