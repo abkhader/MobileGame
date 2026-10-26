@@ -15,7 +15,8 @@ List<Sfx> soundsFor(GameState before, GameState after, GameEvent event) {
       ];
     case GameEvent.runEnded:
     case GameEvent.lost:
-      return [Sfx.runEnd];
+      // The 25th beat ends the run, and may still grab a spark.
+      return [Sfx.runEnd, if (_sparkCollected(before, after)) Sfx.spark];
     case GameEvent.won:
       return [Sfx.move, Sfx.win];
     case GameEvent.none:

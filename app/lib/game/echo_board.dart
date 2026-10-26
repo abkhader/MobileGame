@@ -570,9 +570,16 @@ class EchoBoard extends FlameGame {
       _motePaint.color = _sparkCoreRamp.at(1 - k);
       final dist = cell * (0.12 + 0.38 * out);
       final mote = cell * 0.05 * (1 - 0.6 * k);
+      // Scaled so the shared unit directions are the mote centres: no
+      // offsets are built per mote.
+      canvas
+        ..save()
+        ..translate(center.dx, center.dy)
+        ..scale(dist);
       for (final d in SparkBurst.directions) {
-        canvas.drawCircle(center + d * dist, mote, _motePaint);
+        canvas.drawCircle(d, mote / dist, _motePaint);
       }
+      canvas.restore();
     }
   }
 

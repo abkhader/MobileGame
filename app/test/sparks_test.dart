@@ -74,11 +74,11 @@ void main() {
   ) async {
     await _pumpGame(t, '1-03');
     expect(_sparks(0), findsOneWidget);
-    expect(find.text('✦ 0 / 3'), findsOneWidget);
+    expect(find.text('0 / 3'), findsOneWidget);
     await tapKey(t, LogicalKeyboardKey.arrowDown);
     expect(_game(t).state.collected, {const Position(1, 2)});
     expect(_sparks(1), findsOneWidget);
-    expect(find.text('✦ 1 / 3'), findsOneWidget);
+    expect(find.text('1 / 3'), findsOneWidget);
     await tapKey(t, LogicalKeyboardKey.keyZ);
     expect(_game(t).state.collected, isEmpty);
     expect(_sparks(0), findsOneWidget);
@@ -147,6 +147,32 @@ void main() {
     await pumpFrames(t, const Duration(milliseconds: 400));
     expect(_fly, findsNothing);
     await _settleFully(t);
+  });
+
+  testWidgets('every grabbed spark flies, even one beat apart', (t) async {
+    await _pumpGame(t, '1-01');
+    int flights() =>
+        (t.state(find.byType(GameScreen)) as dynamic).sparkFlightsForTesting
+            as int;
+    // Holding right on 1-01: a spark every 200 ms beat, each flight 400 ms.
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await t.pump(Duration.zero);
+    await t.pump(const Duration(milliseconds: 100));
+    expect(flights(), 1);
+    await t.pump(const Duration(milliseconds: 150));
+    expect(_game(t).state.collected, hasLength(2));
+    expect(flights(), 2, reason: 'the first star is still in the air');
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await pumpFrames(t, const Duration(milliseconds: 800));
+    expect(flights(), 0);
+    expect(_fly, findsNothing);
+    await _settleFully(t);
+  });
+
+  testWidgets('the HUD star icon is drawn, not a glyph', (t) async {
+    await _pumpGame(t, '1-03');
+    expect(find.textContaining('✦'), findsNothing);
+    expect(find.byKey(const Key('spark-icon')), findsOneWidget);
   });
 
   testWidgets('restart clears sparks without a fly-back', (t) async {

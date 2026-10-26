@@ -97,6 +97,13 @@ void main() {
       expect(soundsFor(at, won, GameEvent.won), [Sfx.move, Sfx.win]);
     });
 
+    test('a spark grabbed on the run-ending beat still chimes', () {
+      final s1 = Rules.step(s0, Move.right);
+      expect(soundsFor(s0, s1, GameEvent.runEnded), [Sfx.runEnd, Sfx.spark]);
+      expect(soundsFor(s0, s1, GameEvent.lost), [Sfx.runEnd, Sfx.spark]);
+      expect(soundsFor(s1, s1, GameEvent.runEnded), [Sfx.runEnd]);
+    });
+
     test('a rewind or restart that drops a spark is silent', () {
       final s1 = Rules.step(s0, Move.right);
       expect(soundsFor(s1, s0, GameEvent.none), isEmpty);

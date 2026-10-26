@@ -6,12 +6,14 @@ import 'dart:ui' show Picture, PictureRecorder, PointMode;
 import 'package:echo_core/echo_core.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 
 import '../app_services.dart';
 import '../art/pip.dart';
 import '../art/spark_star.dart';
 import '../audio/audio_service.dart';
 import '../audio/game_sounds.dart';
+import '../game/board_effects.dart' show AlphaRamp;
 import '../game/echo_board.dart';
 import '../game/floating_joystick.dart';
 import '../game/flow_controller.dart';
@@ -74,6 +76,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   @visibleForTesting
   EchoBoard? get boardForTesting => _board;
+
+  /// Stars in the air between the board and the counter.
+  @visibleForTesting
+  int get sparkFlightsForTesting => _flyKey.currentState?.activeCount ?? 0;
 
   @override
   void initState() {
@@ -245,20 +251,27 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       final from = collect ? tile : hud;
       final to = collect ? hud : tile;
       if (reduce) {
-        fly.fly(to, to, _hudStarRadius, _hudStarRadius, _flyFade, fade: true);
+        fly.fly(
+          i,
+          to,
+          to,
+          _SparkFlyState.hudRadius,
+          _SparkFlyState.hudRadius,
+          _flyFade,
+          fade: true,
+        );
       } else {
         fly.fly(
+          i,
           from,
           to,
-          collect ? radius : _hudStarRadius,
-          collect ? _hudStarRadius : radius,
+          collect ? radius : _SparkFlyState.hudRadius,
+          collect ? _SparkFlyState.hudRadius : radius,
           collect ? _flyIn : _flyBack,
         );
       }
     }
   }
-
-  static const _hudStarRadius = 7.0;
 
   /// Spark [i]'s tile centre, the counter's star and the board's spark
   /// radius, in the fly layer's coordinates; null before layout.
@@ -279,8 +292,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final center = board.sparkCenter(i);
     if (center == null) return null;
     final tile = layer.globalToLocal(game.localToGlobal(center));
-    final h = counter.size.height / 2;
-    final hud = layer.globalToLocal(counter.localToGlobal(Offset(h, h)));
+    final hud = layer.globalToLocal(
+      counter.localToGlobal(counter.size.center(Offset.zero)),
+    );
     return (tile, hud, board.cellSize * 0.2);
   }
 
@@ -515,7 +529,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ),
                   const SizedBox(width: 16),
                   _SparkCounter(
-                    key: _counterKey,
+                    iconKey: _counterKey,
                     count: state.collected.length,
                     total: c.level.sparks.length,
                   ),
@@ -1028,29 +1042,72 @@ class _RunDotsPainter extends CustomPainter {
       old.runIndex != runIndex || old.runLimit != runLimit;
 }
 
-/// "✦ n / 3": the sparks grabbed in this play.
+/// A drawn star and "n / 3": the sparks grabbed in this play.
 class _SparkCounter extends StatelessWidget {
-  const _SparkCounter({required this.count, required this.total, super.key});
+  const _SparkCounter({
+    required this.iconKey,
+    required this.count,
+    required this.total,
+  });
 
+  /// On the star, so a flight lands on its centre.
+  final Key iconKey;
   final int count;
   final int total;
+
+  static const _icon = _SparkFlyState.hudRadius * 2;
 
   @override
   Widget build(BuildContext context) => Semantics(
     label: 'Sparks, $count of $total',
     excludeSemantics: true,
-    child: Text(
-      '✦ $count / $total',
-      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-        color: palette.spark,
-        fontWeight: FontWeight.w600,
-      ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        RepaintBoundary(
+          key: iconKey,
+          child: const CustomPaint(
+            key: Key('spark-icon'),
+            size: Size.square(_icon),
+            painter: _SparkIconPainter(),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$count / $total',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: palette.spark,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     ),
   );
 }
 
-/// One golden star flying between a tile and the counter. Built only while
-/// a flight runs: one controller, one small painter in its own layer.
+/// The counter's star, from the same path as the board's sparks.
+class _SparkIconPainter extends CustomPainter {
+  const _SparkIconPainter();
+
+  static final _paint = Paint()..color = palette.spark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas
+      ..save()
+      ..translate(size.width / 2, size.height / 2)
+      ..scale(size.shortestSide / 2)
+      ..drawPath(unitSparkStar, _paint)
+      ..restore();
+  }
+
+  @override
+  bool shouldRepaint(_SparkIconPainter old) => false;
+}
+
+/// Golden stars flying between tiles and the counter, one slot per spark so
+/// quick grabs (or rewinds) all animate. One ticker drives every slot and
+/// one painter draws them; the layer exists only while a star is in the air.
 class _SparkFly extends StatefulWidget {
   const _SparkFly({super.key});
 
@@ -1058,24 +1115,61 @@ class _SparkFly extends StatefulWidget {
   State<_SparkFly> createState() => _SparkFlyState();
 }
 
-typedef _Flight = ({Offset from, Offset to, double r0, double r1, bool fade});
+/// One flight, reused: its fields are rewritten, never reallocated.
+class _FlightSlot {
+  bool active = false;
+  double fromX = 0;
+  double fromY = 0;
+  double toX = 0;
+  double toY = 0;
+  double r0 = 0;
+  double r1 = 0;
+  bool fade = false;
+
+  /// Seconds on the ticker when it started, and how long it lasts.
+  double start = 0;
+  double duration = 1;
+}
 
 class _SparkFlyState extends State<_SparkFly>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(vsync: this)
-    ..addStatusListener(_onStatus);
+  static const hudRadius = 7.0;
+  static const slots = 3;
 
-  _Flight? _flight;
+  late final Ticker _ticker = createTicker(_onTick);
+  final List<_FlightSlot> _slots = List.generate(
+    slots,
+    (_) => _FlightSlot(),
+    growable: false,
+  );
 
-  void _onStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && mounted) {
-      setState(() => _flight = null);
+  /// Seconds since the ticker started; repaints the painter.
+  final ValueNotifier<double> _now = ValueNotifier(0);
+  bool _shown = false;
+
+  int get activeCount => _slots.where((s) => s.active).length;
+
+  void _onTick(Duration elapsed) {
+    final now = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
+    var any = false;
+    for (final s in _slots) {
+      if (s.active && now - s.start >= s.duration) s.active = false;
+      any |= s.active;
     }
+    _now.value = now;
+    if (!any) _stop();
   }
 
-  /// Starts a flight, replacing any running one. With [fade] the star stays
-  /// at [to] and fades out.
+  void _stop() {
+    _ticker.stop();
+    _now.value = 0;
+    if (_shown && mounted) setState(() => _shown = false);
+  }
+
+  /// Starts (or restarts) the flight of spark [index]; the others keep
+  /// flying. With [fade] the star stays at [to] and fades out.
   void fly(
+    int index,
     Offset from,
     Offset to,
     double r0,
@@ -1083,75 +1177,93 @@ class _SparkFlyState extends State<_SparkFly>
     Duration duration, {
     bool fade = false,
   }) {
-    setState(() {
-      _flight = (from: from, to: to, r0: r0, r1: r1, fade: fade);
-    });
-    _controller
-      ..duration = duration
-      ..forward(from: 0);
+    if (index < 0 || index >= slots) return;
+    _slots[index]
+      ..active = true
+      ..fromX = from.dx
+      ..fromY = from.dy
+      ..toX = to.dx
+      ..toY = to.dy
+      ..r0 = r0
+      ..r1 = r1
+      ..fade = fade
+      ..start = _ticker.isActive ? _now.value : 0
+      ..duration = duration.inMicroseconds / Duration.microsecondsPerSecond;
+    if (!_ticker.isActive) unawaited(_ticker.start());
+    if (!_shown) setState(() => _shown = true);
   }
 
+  /// Drops every flight at once, e.g. on a restart.
   void cancel() {
-    _controller.stop();
-    if (_flight != null) setState(() => _flight = null);
+    for (final s in _slots) {
+      s.active = false;
+    }
+    if (_ticker.isActive) _stop();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ticker.dispose();
+    _now.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final flight = _flight;
-    if (flight == null) return const SizedBox.shrink();
+    if (!_shown) return const SizedBox.shrink();
     return RepaintBoundary(
       child: CustomPaint(
         key: const Key('spark-fly'),
         size: Size.infinite,
-        painter: _SparkFlyPainter(_controller, flight),
+        painter: _SparkFlyPainter(_now, _slots),
       ),
     );
   }
 }
 
 class _SparkFlyPainter extends CustomPainter {
-  _SparkFlyPainter(this.progress, this.flight) : super(repaint: progress);
+  _SparkFlyPainter(this.now, this.slots) : super(repaint: now);
 
-  final Animation<double> progress;
-  final _Flight flight;
+  final ValueNotifier<double> now;
+  final List<_FlightSlot> slots;
 
   static final _paint = Paint();
+  static final _ramp = AlphaRamp(palette.spark);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final t = progress.value;
-    final double alpha;
-    final Offset at;
-    if (flight.fade) {
-      alpha = 1 - t;
-      at = flight.to;
-    } else {
-      final k = Curves.easeInOutCubic.transform(t);
-      // A gentle arc upward on the way.
-      final lift = -math.sin(math.pi * k) * 24;
-      at = Offset.lerp(flight.from, flight.to, k)! + Offset(0, lift);
-      alpha = t < 0.85 ? 1 : (1 - t) / 0.15 * 0.5 + 0.5;
+    final time = now.value;
+    for (final s in slots) {
+      if (!s.active) continue;
+      final t = ((time - s.start) / s.duration).clamp(0.0, 1.0);
+      final double alpha;
+      final double x;
+      final double y;
+      if (s.fade) {
+        alpha = 1 - t;
+        x = s.toX;
+        y = s.toY;
+      } else {
+        final k = Curves.easeInOutCubic.transform(t);
+        // A gentle arc upward on the way.
+        x = s.fromX + (s.toX - s.fromX) * k;
+        y = s.fromY + (s.toY - s.fromY) * k - math.sin(math.pi * k) * 24;
+        alpha = t < 0.85 ? 1 : (1 - t) / 0.15 * 0.5 + 0.5;
+      }
+      final r = s.r0 + (s.r1 - s.r0) * t;
+      _paint.color = _ramp.at(alpha);
+      canvas
+        ..save()
+        ..translate(x, y)
+        ..scale(r)
+        ..drawPath(unitSparkStar, _paint)
+        ..restore();
     }
-    final r = flight.r0 + (flight.r1 - flight.r0) * t;
-    _paint.color = palette.spark.withValues(alpha: alpha.clamp(0.0, 1.0));
-    canvas
-      ..save()
-      ..translate(at.dx, at.dy)
-      ..scale(r)
-      ..drawPath(unitSparkStar, _paint)
-      ..restore();
   }
 
   @override
   bool shouldRepaint(_SparkFlyPainter old) =>
-      old.progress != progress || old.flight != flight;
+      old.now != now || old.slots != slots;
 }
 
 class _LoadErrorCard extends StatelessWidget {
