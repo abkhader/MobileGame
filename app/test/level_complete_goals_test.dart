@@ -108,14 +108,17 @@ void main() {
   });
 
   testWidgets('a later win with all sparks drops the count', (t) async {
+    final sem = t.ensureSemantics();
     await _pump(t, before: _p(sparks: 1), after: _p(sparks: 7, moves: true));
     expect(find.text('All 3 sparks'), findsOneWidget);
     expect(find.textContaining('(3/3)'), findsNothing);
     expect(_fly(0), findsNothing);
     expect(_fly(1), findsOneWidget);
     expect(_fly(2), findsOneWidget);
+    expect(find.bySemanticsLabel('All 3 sparks, earned'), findsOneWidget);
     expect(find.byIcon(Icons.star), findsNWidgets(3));
     await t.pump(const Duration(seconds: 1));
+    sem.dispose();
   });
 
   testWidgets('stars already earned appear lit without animating', (t) async {

@@ -14,8 +14,8 @@ class AbilityBadge {
 const abilityBadges = [
   AbilityBadge('Dash', 15),
   AbilityBadge('Light burst', 35),
-  AbilityBadge('Swap', 60),
-  AbilityBadge('Freeze', 90),
+  AbilityBadge('Swap', 55),
+  AbilityBadge('Freeze', 75),
 ];
 
 /// The map header's total: a drawn spark and "n / of".

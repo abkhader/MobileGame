@@ -260,6 +260,11 @@ class _DistrictPanel extends StatelessWidget {
   }
 }
 
+/// The district painter, for tests of when it repaints.
+@visibleForTesting
+CustomPainter skylinePainterForTest(List<Building> buildings, int seed) =>
+    _SkylinePainter(buildings, seed);
+
 class _SkylinePainter extends CustomPainter {
   _SkylinePainter(this.buildings, this.seed);
 
