@@ -310,7 +310,10 @@ void main() {
           lines[1],
           matches(RegExp(r'^  runs 2, best 6, nodes \d+, \d+ ms$')),
         );
-        expect(lines[2], '  sparks: (3,1) run1, (1,2) run1, (4,2) echo');
+        expect(
+          lines[2],
+          '  sparks: (3,1) run1, (1,2) run1, (4,2) echo optional',
+        );
       },
     );
 
@@ -344,6 +347,55 @@ void main() {
       final (code, out) = await writeThenCheck([]);
       expect(code, 1);
       expect(out, '2-01.json: FAIL no spark needs an echo\n');
+    });
+
+    // (5,1) sits behind door A on the only way to the exit: it needs an
+    // echo, but every win collects it. (4,2) is an echo spark off the route.
+    const forcedEcho = ['########', '#Sa*A*E#', '#*######', '########'];
+    const forcedAndOptional = ['########', '#Sa.A*E#', '#*##*###', '########'];
+
+    test('a chapter-2 level whose only echo spark is forced fails', () async {
+      put('2-01.json', level('2-01', forcedEcho, 2));
+      final (code, out) = await writeThenCheck([]);
+      expect(code, 1);
+      expect(
+        out,
+        '2-01.json: FAIL no echo spark is optional (every win collects it)\n',
+      );
+    });
+
+    test('a chapter-3 level whose only echo spark is forced fails', () async {
+      // 3 runs are not needed here, so check the spark rule directly.
+      final parsed = LevelLoader.fromMap(level('3-01', forcedEcho, 3));
+      expect(
+        sparkFailure(parsed),
+        'no echo spark is optional (every win collects it)',
+      );
+    });
+
+    test('a chapter-1 level may have only a forced echo spark', () {
+      final parsed = LevelLoader.fromMap(level('1-05', forcedEcho, 2));
+      final labels = <String>[];
+      expect(sparkFailure(parsed, labels: labels), isNull);
+      expect(labels, ['(3,1) run1', '(5,1) echo', '(1,2) run1']);
+    });
+
+    test('one optional echo spark is enough and --report marks it', () async {
+      put('2-01.json', level('2-01', forcedAndOptional, 2));
+      final (code, out) = await writeThenCheck(['--report']);
+      expect(code, 0, reason: out);
+      expect(
+        out.trimRight().split('\n')[2],
+        '  sparks: (5,1) echo, (1,2) run1, (4,2) echo optional',
+      );
+    });
+
+    test('an avoidability proof over the budget fails', () {
+      final parsed = LevelLoader.fromMap(level('2-01', forcedAndOptional, 2));
+      expect(
+        sparkFailure(parsed, avoidMaxNodes: 1),
+        'cannot prove spark at (4,2) is optional (budget exceeded)',
+      );
     });
 
     test('a chapter-1 level needs no echo spark', () async {

@@ -200,6 +200,7 @@ _Outcome _process(
       final failure = sparkFailure(
         level,
         maxNodes: sparkMaxNodes ?? options.maxNodes,
+        avoidMaxNodes: options.maxNodes,
         labels: labels,
       );
       if (failure != null) return _Outcome.fail(failure);
@@ -254,11 +255,19 @@ String? _qualityFailure(
 
 /// The spark checks: exactly 3 sparks, each on a floor tile and collectible
 /// in a winning play, and in chapters 2-3 at least one that needs an echo
-/// (no winning play collects it in run 1). Returns the first failure, or
-/// null after adding `(x,y) echo` or `(x,y) run1` per spark to [labels].
+/// (no winning play collects it in run 1) and is also optional (some winning
+/// play never steps any actor onto it, see [_avoidable]). Returns the first
+/// failure, or null after adding `(x,y) run1`, `(x,y) echo` or
+/// `(x,y) echo optional` per spark to [labels].
 /// [maxNodes] is the node budget of each spark proof (default
-/// [sparkProofMaxNodes]).
-String? sparkFailure(Level level, {int? maxNodes, List<String>? labels}) {
+/// [sparkProofMaxNodes]); [avoidMaxNodes] that of each optional proof
+/// (default: [solve]'s).
+String? sparkFailure(
+  Level level, {
+  int? maxNodes,
+  int? avoidMaxNodes,
+  List<String>? labels,
+}) {
   final sparks = level.sparks;
   if (sparks.length != 3) return 'level has ${sparks.length} sparks (need 3)';
   String at(Position p) => '(${p.x},${p.y})';
@@ -269,6 +278,7 @@ String? sparkFailure(Level level, {int? maxNodes, List<String>? labels}) {
   }
   final found = <String>[];
   var echo = false;
+  var optionalEcho = false;
   for (final p in sparks) {
     final proof = maxNodes == null
         ? sparkProof(level, p)
@@ -279,12 +289,73 @@ String? sparkFailure(Level level, {int? maxNodes, List<String>? labels}) {
     if (!proof.collectible) {
       return 'spark at ${at(p)} cannot be collected in a winning play';
     }
-    echo |= proof.echoNeeded;
-    found.add('${at(p)} ${proof.echoNeeded ? 'echo' : 'run1'}');
+    var label = proof.echoNeeded ? 'echo' : 'run1';
+    if (proof.echoNeeded) {
+      echo = true;
+      final avoidable = _avoidable(level, p, avoidMaxNodes);
+      if (avoidable == null) {
+        return 'cannot prove spark at ${at(p)} is optional (budget exceeded)';
+      }
+      if (avoidable) {
+        optionalEcho = true;
+        label = 'echo optional';
+      }
+    }
+    found.add('${at(p)} $label');
   }
-  if (!echo && level.id.startsWith(RegExp('[23]-'))) {
-    return 'no spark needs an echo';
+  if (level.id.startsWith(RegExp('[23]-'))) {
+    if (!echo) return 'no spark needs an echo';
+    if (!optionalEcho) {
+      return 'no echo spark is optional (every win collects it)';
+    }
   }
   labels?.addAll(found);
   return null;
+}
+
+/// Whether some winning play within `runLimit` never steps any actor onto
+/// [cell], or null when the search went over [maxNodes].
+///
+/// Exact: the level with [cell] turned into a wall (and its spark dropped)
+/// is solvable exactly when such a play exists. A winning play that never
+/// steps an actor onto the floor cell never even tries to (a move onto
+/// floor always succeeds), so the wall changes nothing and it also wins the
+/// walled level. Conversely, in a winning play of the walled level an actor
+/// that tries to step onto the wall just stays put, which is exactly what
+/// [Move.wait] does (walls are not plates, so doors are untouched); turning
+/// every such player move into a wait gives the same positions tick by tick
+/// for players and ghosts alike, because ghosts replay their run's player
+/// moves. That play wins the original level with no actor ever on [cell].
+/// So "no player steps there" and "no actor steps there" coincide.
+bool? _avoidable(Level level, Position cell, int? maxNodes) {
+  final walled = Level(
+    id: level.id,
+    name: level.name,
+    runLimit: level.runLimit,
+    grid: [
+      for (var y = 0; y < level.height; y++)
+        [
+          for (var x = 0; x < level.width; x++)
+            Position(x, y) == cell
+                ? const Tile(TileKind.wall)
+                : level.tileAt(Position(x, y)),
+        ],
+    ],
+    start: level.start,
+    exit: level.exit,
+    plates: level.plates,
+    doors: level.doors,
+    sparks: [
+      for (final s in level.sparks)
+        if (s != cell) s,
+    ],
+  );
+  final result = maxNodes == null
+      ? solve(walled)
+      : solve(walled, maxNodes: maxNodes);
+  return switch (result) {
+    Solved() => true,
+    Unsolvable() => false,
+    BudgetExceeded() => null,
+  };
 }
