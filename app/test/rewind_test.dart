@@ -124,13 +124,17 @@ void main() {
   testWidgets('level 1-03 pulses the button until the first rewind', (t) async {
     await _pumpGame(t, '1-03');
     expect(_pulse, findsOneWidget);
-    await tapKey(t, LogicalKeyboardKey.space);
     double scale() => t
         .widget<ScaleTransition>(
           find.descendant(of: _pulse, matching: find.byType(ScaleTransition)),
         )
         .scale
         .value;
+    // New echo works at tick 0, but the nudge waits for a first move.
+    final still = scale();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(scale(), still);
+    await tapKey(t, LogicalKeyboardKey.space);
     final before = scale();
     await t.pump(const Duration(milliseconds: 600));
     expect(scale(), isNot(before));

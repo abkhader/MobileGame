@@ -1,9 +1,12 @@
 import 'package:echo_core/echo_core.dart';
 import 'package:flutter/foundation.dart';
 
+import 'hits.dart';
+
 /// What the last change was. [restarted] marks a level restart, so listeners
-/// never have to infer it.
-enum GameEvent { none, moved, runEnded, won, lost, restarted }
+/// never have to infer it. [hit] is a forced rewind: Pip was hit and his run
+/// ended there (a hit on the last run is [lost], with `lastHits.pip` set).
+enum GameEvent { none, moved, runEnded, hit, won, lost, restarted }
 
 /// Wraps the engine [Rules] for the UI, with a per-run undo stack.
 class GameController extends ChangeNotifier {
@@ -15,6 +18,7 @@ class GameController extends ChangeNotifier {
   GameState _state;
   GameState? _previous;
   GameEvent _lastEvent = GameEvent.none;
+  PipHit? _lastPipHit;
 
   GameState get state => _state;
 
@@ -23,11 +27,19 @@ class GameController extends ChangeNotifier {
 
   GameEvent get lastEvent => _lastEvent;
 
+  /// Where and why Pip was hit on the last change; null unless that change
+  /// was a step that hit him ([GameEvent.hit], or a hit [GameEvent.lost]).
+  PipHit? get lastPipHit => _lastPipHit;
+
   bool get _playing => _state.status == GameStatus.playing;
 
   bool get canUndo => _playing && _undoStack.isNotEmpty;
 
-  bool get canEndRun => _playing && _state.tick > 0;
+  /// New echo works at tick 0 while runs remain (a 0-move echo waits on the
+  /// start); Give up on the final run needs at least one beat, so it is
+  /// never an accidental instant loss.
+  bool get canEndRun =>
+      _playing && (_state.tick > 0 || _state.runIndex < level.runLimit - 1);
 
   /// Bit i set while this play holds spark i (in `level.sparks` order).
   int get sparkMask => sparkMaskOf(_state);
@@ -43,12 +55,13 @@ class GameController extends ChangeNotifier {
   }
 
   /// True when [m] would leave Pip in place (wall, closed door, edge). Uses
-  /// the rules' own logic. Waiting is never blocked, and nothing is once the
-  /// level is won or lost (the rules refuse to step then).
+  /// the rules' own movement, so a step into a danger is not a push. Waiting
+  /// is never blocked, and nothing is once the level is won or lost.
   bool isBlocked(Move m) =>
       _playing &&
       m != Move.wait &&
-      Rules.step(_state, m).player == _state.player;
+      Rules.moveTarget(level, _state.player, m, _state.openDoors) ==
+          _state.player;
 
   void move(Move m) {
     if (!_playing) return;
@@ -62,10 +75,16 @@ class GameController extends ChangeNotifier {
       _undoStack.add(before);
     }
     _previous = runChanged ? null : before;
+    _lastPipHit = pipHitOf(before, after);
     _lastEvent = switch (after.status) {
       GameStatus.won => GameEvent.won,
       GameStatus.lost => GameEvent.lost,
-      GameStatus.playing => runChanged ? GameEvent.runEnded : GameEvent.moved,
+      GameStatus.playing =>
+        !runChanged
+            ? GameEvent.moved
+            : after.lastHits.pip
+            ? GameEvent.hit
+            : GameEvent.runEnded,
     };
     notifyListeners();
   }
@@ -74,6 +93,7 @@ class GameController extends ChangeNotifier {
     if (!canUndo) return;
     _state = _undoStack.removeLast();
     _previous = null;
+    _lastPipHit = null;
     _lastEvent = GameEvent.none;
     notifyListeners();
   }
@@ -83,6 +103,7 @@ class GameController extends ChangeNotifier {
     _state = Rules.endRun(_state);
     _undoStack.clear();
     _previous = null;
+    _lastPipHit = null;
     _lastEvent = _state.status == GameStatus.lost
         ? GameEvent.lost
         : GameEvent.runEnded;
@@ -93,6 +114,7 @@ class GameController extends ChangeNotifier {
     _state = GameState.initial(level);
     _undoStack.clear();
     _previous = null;
+    _lastPipHit = null;
     _lastEvent = GameEvent.restarted;
     notifyListeners();
   }

@@ -14,9 +14,11 @@ import 'board_static_layer.dart';
 import 'flow_controller.dart';
 import 'game_clock.dart';
 import 'game_controller.dart';
+import 'hits.dart';
 import 'palette.dart' as palette;
 
-/// Draws the level, echoes and Pip, gliding between beats.
+/// Draws the level, echoes, Shades and Pip, gliding between beats, and the
+/// dangers: laser beams, holes in cracked floor, hits.
 ///
 /// Its game loop drives [flow] and runs only while time flows or a short
 /// effect plays out; when time is frozen and everything has settled the
@@ -49,8 +51,9 @@ class EchoBoard extends FlameGame {
 
   bool _reduceEffects;
 
-  /// No trails, shimmer, flicker, lean or squash; the battery warning and the
-  /// win light hold steady. Motion and gliding stay.
+  /// No trails, shimmer, flicker, lean or squash, no Shade wobble, dust,
+  /// hit flash or beam glow fades; the battery warning and the win light
+  /// hold steady. Motion and gliding stay.
   bool get reduceEffects => _reduceEffects;
   set reduceEffects(bool value) {
     if (value == _reduceEffects) return;
@@ -100,6 +103,26 @@ class EchoBoard extends FlameGame {
   static final _exitRamp = AlphaRamp(palette.exit);
   static final _whiteRamp = AlphaRamp(const Color(0xFFFFFFFF));
   static final _plateRamp = AlphaRamp(palette.platePressed);
+  static final _laserRamp = AlphaRamp(palette.laser);
+  static final _laserCoreRamp = AlphaRamp(palette.laserCore);
+  static final _dustRamp = AlphaRamp(palette.dust);
+  static final _shadeGlowRamp = AlphaRamp(palette.shadeGlow);
+  static final _shadeEyesRamp = AlphaRamp(palette.shadeEyes);
+
+  final _beamGlowPaint = Paint()..strokeCap = StrokeCap.round;
+  final _beamPaint = Paint()..strokeCap = StrokeCap.round;
+  final _holePaint = Paint()..color = palette.hole;
+  final _holeRimPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..color = palette.holeRim;
+  final _dustPaint = Paint();
+  final _shadePaint = Paint()..color = palette.shadeBody;
+  final _shadeGlowPaint = Paint();
+  final _shadeEyePaint = Paint();
+  final _shadePath = Path();
+  final _hitPaint = Paint();
+  final _hitMotePaint = Paint();
+  static final _hitDarkRamp = AlphaRamp(palette.shadeGlow);
 
   final BoardStaticLayer _layer;
   double _cell = -1;
@@ -127,7 +150,23 @@ class EchoBoard extends FlameGame {
   // Interpolated positions in tiles, refreshed before each update and draw.
   Offset _pipTile = Offset.zero;
   final List<Offset> _ghostTiles = [];
+  final List<Offset> _shadeTiles = [];
   double _ticksUsed = 0;
+
+  /// Unit direction each Shade's eyes look: toward its next step. Worked out
+  /// once per state change (the rule walks distance fields), never per
+  /// frame.
+  List<Offset> _shadeLook = const [];
+
+  /// The holes as last seen, to spot new ones.
+  Set<Position> _holes = const {};
+
+  /// Laser beam level per laser now: 0 dark, [_warnLevel] warning, 1 firing.
+  double _beamT = 1;
+  static const _warnLevel = 0.3;
+
+  /// Shade wobble, in fractions of its radius.
+  static const _wobble = 0.08;
 
   /// Starts the engine again if it was paused. Safe to call often.
   void wake() {
@@ -193,6 +232,46 @@ class EchoBoard extends FlameGame {
   @visibleForTesting
   double get pipStretchForTesting => _pip.stretch;
 
+  /// Echo [i] is drawn: alive, or still fizzling out.
+  @visibleForTesting
+  bool ghostDrawnForTesting(int i) => _ghostDrawn(i);
+
+  @visibleForTesting
+  bool ghostFizzlingForTesting(int i) =>
+      i < _fx.fizzles.length && _fx.fizzles[i].active;
+
+  /// The hole at [p] is drawn (it shows once its dust starts).
+  @visibleForTesting
+  bool holeDrawnForTesting(Position p) => _holeDrawn(p);
+
+  @visibleForTesting
+  bool dustActiveForTesting(Position p) => _fx.dust[p]?.active ?? false;
+
+  @visibleForTesting
+  bool get hitBurstActiveForTesting => _fx.hitBurst.active;
+
+  /// Where each Shade is drawn, in tiles.
+  @visibleForTesting
+  List<Offset> get shadeTilesForTesting => List.unmodifiable(_shadeTiles);
+
+  /// Where each Shade's eyes look.
+  @visibleForTesting
+  List<Offset> get shadeLookForTesting => List.unmodifiable(_shadeLook);
+
+  /// The first Shade's wobble now, in fractions of its radius: 0 with
+  /// reduced effects.
+  @visibleForTesting
+  double get shadeWobbleForTesting => _wobbleAt(0, 0);
+
+  /// The beam level of the laser at [p] (0 dark, 0.3 warning, 1 firing),
+  /// as drawn now without its crackle.
+  @visibleForTesting
+  double laserGlowForTesting(Position p) {
+    _syncPositions();
+    final beat = controller.level.lasers[p];
+    return beat == null ? 0 : _beamLevel(beat);
+  }
+
   @override
   void onMount() {
     super.onMount();
@@ -233,8 +312,24 @@ class EchoBoard extends FlameGame {
     _fx.resetSparks(level.sparks.length);
     _sparkMask = controller.sparkMask;
     _fx.resetEchoes(state.ghostPositions.length);
+    _fx.resetDust(level.cracked);
+    _holes = state.holes;
+    _shadeLook = _lookOf(state);
     _pip.reset();
     _fx.winFlash.stop();
+  }
+
+  /// Each Shade's next step, as a unit direction (zero when it waits).
+  static List<Offset> _lookOf(GameState state) {
+    if (state.shades.isEmpty) return const [];
+    final next = Rules.shadeLookahead(state);
+    return [
+      for (var i = 0; i < next.length; i++)
+        Offset(
+          (next[i].x - state.shades[i].x).toDouble(),
+          (next[i].y - state.shades[i].y).toDouble(),
+        ),
+    ];
   }
 
   void _onGameChanged() {
@@ -293,7 +388,9 @@ class EchoBoard extends FlameGame {
       _pip.reset();
       _fx.winFlash.stop();
       _fx.finish.stop();
+      _fx.stopDangers();
     }
+    _onDangers(state, event, reset);
 
     // The clock stops in the beat that ends the run: finish that glide here.
     if ((event == GameEvent.won || event == GameEvent.lost) && from != null) {
@@ -347,11 +444,63 @@ class EchoBoard extends FlameGame {
     return from;
   }
 
+  /// Holes, echo hits and Pip's hit on a change. A forward beat starts
+  /// their effects; a rewind stops the ones it undid. Everything drawn
+  /// follows the state, so a rewind restores it all.
+  void _onDangers(GameState state, GameEvent event, bool reset) {
+    _shadeLook = _lookOf(state);
+    final forward =
+        event == GameEvent.moved ||
+        event == GameEvent.won ||
+        event == GameEvent.lost;
+    final halfBeat =
+        _beatLength().inMicroseconds / Duration.microsecondsPerSecond / 2;
+    final fx = !_reduceEffects;
+
+    for (final entry in _fx.dust.entries) {
+      final p = entry.key;
+      if (!state.holes.contains(p)) {
+        entry.value.stop();
+      } else if (forward && !reset && !_holes.contains(p) && fx) {
+        // The floor breaks once the actor on it is half way off.
+        entry.value.startAfter(halfBeat);
+      }
+    }
+    _holes = state.holes;
+
+    final alive = state.ghostAlive;
+    for (var i = 0; i < _fx.fizzles.length && i < alive.length; i++) {
+      if (alive[i]) _fx.fizzles[i].stop();
+    }
+    if (forward && !reset) {
+      for (final i in state.lastHits.ghosts) {
+        if (i < _fx.fizzles.length) _fx.fizzles[i].startAfter(halfBeat);
+      }
+    }
+
+    final hit = controller.lastPipHit;
+    if (hit != null && fx && (event == GameEvent.hit || forward)) {
+      // A loss glides onto the tile first; a forced rewind has snapped Pip
+      // back, so the flash marks where he fell at once.
+      _fx.hitBurst.startAt(
+        hit.at,
+        dark: hit.cause == HitCause.shade,
+        delay: event == GameEvent.hit ? 0 : halfBeat,
+      );
+    } else if (event == GameEvent.none || event == GameEvent.restarted) {
+      _fx.hitBurst.stop();
+    }
+  }
+
   Set<Position> _pressedPlates(GameState state) {
     final level = controller.level;
+    // A dead echo presses nothing.
     return {
-      for (final p in [state.player, ...state.ghostPositions])
-        if (level.tileAt(p).kind == TileKind.plate) p,
+      if (level.tileAt(state.player).kind == TileKind.plate) state.player,
+      for (var i = 0; i < state.ghostPositions.length; i++)
+        if (state.ghostAlive[i] &&
+            level.tileAt(state.ghostPositions[i]).kind == TileKind.plate)
+          state.ghostPositions[i],
     };
   }
 
@@ -394,9 +543,49 @@ class EchoBoard extends FlameGame {
         _tileLerp(matched ? fromGhosts[i] : ghosts[i], ghosts[i], t),
       );
     }
+    final shades = state.shades;
+    final fromShades = from?.shades;
+    _shadeTiles.clear();
+    for (var i = 0; i < shades.length; i++) {
+      _shadeTiles.add(_tileLerp(fromShades?[i] ?? shades[i], shades[i], t));
+    }
     final fromTick = from?.tick ?? state.tick;
     _ticksUsed = fromTick + (state.tick - fromTick) * t;
+    _beamT = t;
   }
+
+  /// The beam level for a laser of [beat]: it fades between beats while
+  /// time flows (a frozen board is a still frame), and switches outright
+  /// with reduced effects.
+  double _beamLevel(int beat) {
+    final tick = controller.state.tick;
+    final to = _laserLevel(beat, tick);
+    final from = _sameRunFrom;
+    if (_reduceEffects || from == null || from.tick == tick) return to;
+    return _laserLevel(beat, from.tick) +
+        (to - _laserLevel(beat, from.tick)) * _beamT;
+  }
+
+  static double _laserLevel(int beat, int tick) => Rules.laserFires(beat, tick)
+      ? 1
+      : Rules.laserWarns(beat, tick)
+      ? _warnLevel
+      : 0;
+
+  /// Shade [i]'s wobble at point [k] of its outline, in fractions of its
+  /// radius. It moves only while time flows.
+  double _wobbleAt(int i, int k) => _reduceEffects
+      ? 0
+      : _wobble * math.sin(_fx.flicker * 5 + k * 1.7 + i * 2.3);
+
+  bool _ghostDrawn(int i) {
+    final alive = controller.state.ghostAlive;
+    if (i >= alive.length) return false;
+    return alive[i] || (i < _fx.fizzles.length && _fx.fizzles[i].active);
+  }
+
+  bool _holeDrawn(Position p) =>
+      controller.state.holes.contains(p) && !(_fx.dust[p]?.waiting ?? false);
 
   static Offset _tileLerp(Position a, Position b, double t) =>
       Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
@@ -483,22 +672,33 @@ class EchoBoard extends FlameGame {
       }
     }
 
+    _drawHoles(canvas, cell);
     _drawPlates(canvas, cell);
     _drawDoors(canvas);
+    _drawBeams(canvas, cell);
     _drawSparks(canvas, cell);
 
     final hint = _hintSteps;
     if (hint != null && hint.isNotEmpty) _drawHint(canvas, layout, hint, cell);
 
-    // Echoes: trail, translucent flickering body, shimmer on arrival.
+    // Echoes: trail, translucent flickering body, shimmer on arrival. A hit
+    // echo fizzles out and is gone.
     for (var i = 0; i < _ghostTiles.length; i++) {
+      if (!_ghostDrawn(i)) continue;
       final ramp = _echoRamps[i % _echoRamps.length];
       final color = palette.ghostColors[i % palette.ghostColors.length];
       if (fx && i < _fx.ghostTrails.length) {
         _drawTrail(canvas, layout, _fx.ghostTrails[i], ramp, 0.35);
       }
-      final center = _px(layout, _ghostTiles[i]);
+      var center = _px(layout, _ghostTiles[i]);
       var opacity = _ghostOpacity(i);
+      final fizzle = i < _fx.fizzles.length ? _fx.fizzles[i] : null;
+      if (fizzle != null && fizzle.active && !fizzle.waiting) {
+        final k = fizzle.progress;
+        opacity *= 1 - k;
+        // A crackling jitter as it goes (none with reduced effects).
+        if (fx) center += Offset(math.sin(k * 71 + i) * cell * 0.04, 0);
+      }
       final shimmer = i < _fx.shimmers.length ? _fx.shimmers[i] : null;
       if (fx && shimmer != null && shimmer.active) {
         final k = shimmer.progress;
@@ -508,6 +708,8 @@ class EchoBoard extends FlameGame {
       }
       paintPip(canvas, center, cell * 0.3, color, opacity: opacity);
     }
+
+    _drawShades(canvas, layout, cell);
 
     // Pip. The bob is for standing still; a glide carries its own motion.
     if (fx) _drawTrail(canvas, layout, _pip.trail, _playerRamp, 0.45);
@@ -523,12 +725,148 @@ class EchoBoard extends FlameGame {
       stretch: _pip.stretch,
     );
     _drawBattery(canvas, pip, cell);
+    _drawHit(canvas, layout, cell);
 
     final light = _fx.winLight(reduceEffects: _reduceEffects);
     if (light > 0) {
       _flashPaint.color = _exitRamp.at(light);
       canvas.drawRect(_layer.bounds, _flashPaint);
     }
+  }
+
+  /// Holes where cracked floor fell in, with a puff of dust as it breaks.
+  void _drawHoles(Canvas canvas, double cell) {
+    final tiles = _layer.crackedPositions;
+    if (tiles.isEmpty) return;
+    _holeRimPaint.strokeWidth = math.max(1, cell * 0.04);
+    for (var i = 0; i < tiles.length; i++) {
+      final p = tiles[i];
+      if (_holeDrawn(p)) {
+        final rr = _layer.holeRects[i];
+        canvas
+          ..drawRRect(rr, _holePaint)
+          ..drawRRect(rr, _holeRimPaint);
+      }
+      final puff = _fx.dust[p];
+      if (puff == null || !puff.active || puff.waiting) continue;
+      final k = puff.progress;
+      final out = 1 - (1 - k) * (1 - k);
+      final center = _layer.holeRects[i].center;
+      _dustPaint.color = _dustRamp.at(0.7 * (1 - k));
+      final dist = cell * (0.1 + 0.35 * out);
+      final mote = cell * (0.07 + 0.05 * k);
+      // Rising a little as it spreads; unit directions scaled, so no offset
+      // is built per mote.
+      canvas
+        ..save()
+        ..translate(center.dx, center.dy - cell * 0.15 * k)
+        ..scale(dist);
+      for (final d in DustPuff.directions) {
+        canvas.drawCircle(d, mote / dist, _dustPaint);
+      }
+      canvas.restore();
+    }
+  }
+
+  /// Each laser's beam: a dim glow on the beat before it fires, a bright
+  /// crackling beam on its beat.
+  void _drawBeams(Canvas canvas, double cell) {
+    final beats = _layer.laserBeats;
+    if (beats.isEmpty) return;
+    final fx = !_reduceEffects;
+    for (var i = 0; i < beats.length; i++) {
+      final level = _beamLevel(beats[i]);
+      if (level <= 0.01) continue;
+      final a = _layer.beamStarts[i];
+      final b = _layer.beamEnds[i];
+      // The glow builds with the level; the core only shows once it fires.
+      _beamGlowPaint
+        ..strokeWidth = cell * (0.12 + 0.14 * level)
+        ..color = _laserRamp.at(0.6 * level);
+      canvas.drawLine(a, b, _beamGlowPaint);
+      final core = ((level - _warnLevel) / (1 - _warnLevel)).clamp(0.0, 1.0);
+      if (core <= 0) continue;
+      final crackle = fx && !flow.frozen
+          ? 0.75 + 0.25 * math.sin(_fx.flicker * 90 + i * 1.3)
+          : 1.0;
+      _beamPaint
+        ..strokeWidth = cell * 0.05 * crackle
+        ..color = _laserCoreRamp.at(core);
+      canvas.drawLine(a, b, _beamPaint);
+    }
+  }
+
+  /// Shades: a dark, wobbling blob with two violet eyes on its next step.
+  void _drawShades(Canvas canvas, BoardLayout layout, double cell) {
+    final r = cell * 0.32;
+    for (var i = 0; i < _shadeTiles.length; i++) {
+      final c = _px(layout, _shadeTiles[i]);
+      _shadeGlowPaint.color = _shadeGlowRamp.at(0.35);
+      canvas.drawCircle(c, r * 1.18, _shadeGlowPaint);
+      // A smooth closed outline through midpoints of 8 wobbling points.
+      const n = 8;
+      _shadePath.reset();
+      for (var k = 0; k <= n; k++) {
+        final a0 = 2 * math.pi * (k % n) / n;
+        final a1 = 2 * math.pi * ((k + 1) % n) / n;
+        final r0 = r * (1 + _wobbleAt(i, k % n));
+        final r1 = r * (1 + _wobbleAt(i, (k + 1) % n));
+        final px = c.dx + math.cos(a0) * r0;
+        final py = c.dy + math.sin(a0) * r0;
+        final mx = (px + c.dx + math.cos(a1) * r1) / 2;
+        final my = (py + c.dy + math.sin(a1) * r1) / 2;
+        if (k == 0) {
+          _shadePath.moveTo(mx, my);
+        } else {
+          _shadePath.quadraticBezierTo(px, py, mx, my);
+        }
+      }
+      _shadePath.close();
+      canvas.drawPath(_shadePath, _shadePaint);
+      // Two eyes side by side, shifted toward the next step.
+      final look = i < _shadeLook.length ? _shadeLook[i] : Offset.zero;
+      final ex = c.dx + look.dx * r * 0.3;
+      final ey = c.dy + look.dy * r * 0.3 - r * 0.08;
+      final side = r * 0.3;
+      final eye = r * 0.14;
+      _shadeEyePaint.color = _shadeEyesRamp.at(1);
+      canvas
+        ..drawCircle(Offset(ex - side, ey), eye, _shadeEyePaint)
+        ..drawCircle(Offset(ex + side, ey), eye, _shadeEyePaint);
+    }
+  }
+
+  /// Where Pip was hit: his flash fading out and a burst of sparks (dark
+  /// and violet for a Shade's catch). None with reduced effects.
+  void _drawHit(Canvas canvas, BoardLayout layout, double cell) {
+    final burst = _fx.hitBurst;
+    if (!burst.active || burst.waiting) return;
+    final k = burst.progress;
+    final center = layout.centerOf(burst.tile);
+    final ramp = burst.dark ? _hitDarkRamp : _whiteRamp;
+    _hitPaint.color = ramp.at(0.8 * (1 - k));
+    canvas.drawCircle(center, cell * (0.3 + 0.35 * k), _hitPaint);
+    paintPip(
+      canvas,
+      center,
+      cell * 0.3,
+      burst.dark ? palette.shadeBody : palette.player,
+      opacity: 1 - k,
+    );
+    final out = 1 - (1 - k) * (1 - k);
+    _hitMotePaint.color = (burst.dark ? _shadeEyesRamp : _sparkCoreRamp).at(
+      1 - k,
+    );
+    final dist = cell * (0.15 + 0.5 * out);
+    final mote = cell * 0.06 * (1 - 0.6 * k);
+    canvas
+      ..save()
+      ..translate(center.dx, center.dy)
+      ..scale(dist);
+    for (final d in SparkBurst.directions) {
+      canvas.drawCircle(d, mote / dist, _hitMotePaint);
+    }
+    canvas.restore();
   }
 
   bool _sparkDrawn(int i) {

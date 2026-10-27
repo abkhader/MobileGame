@@ -125,4 +125,72 @@ void main() {
       expect(steps[1].to, const Position(2, 1));
     });
   });
+
+  group('dangers', () {
+    // Run 0 walks into the laser on its beat: the hit ends the run. In run 1
+    // the echo repeats it and dissolves while Pip waits, then he walks out.
+    Level laser() => LevelLoader.fromMap({
+      'id': 't',
+      'name': 't',
+      'runLimit': 2,
+      'grid': ['S1.E'],
+      'bestScore': 5,
+      'solution': [
+        ['R'],
+        ['W', 'R', 'R', 'R'],
+      ],
+    });
+
+    test('a run a hit ended is never ended again', () {
+      final level = laser();
+      expect(HintService.pathFor(level, 0), [
+        const Position(0, 0),
+        // The hit sends Pip back: the path stops at the run end.
+      ]);
+      expect(HintService.pathFor(level, 1), const [
+        Position(0, 0),
+        Position(0, 0),
+        Position(1, 0),
+        Position(2, 0),
+        Position(3, 0),
+      ]);
+    });
+
+    test('after a forced rewind the hints carry on with the next run', () {
+      final level = laser();
+      final s = Rules.step(GameState.initial(level), Move.right);
+      expect(s.runIndex, 1);
+      expect(HintService.matchesSolution(level, s), isTrue);
+      expect(HintService.nextBeats(level, s), level.solution![1]);
+    });
+
+    test('the beat that walks into a hit is shown on its tile', () {
+      final steps = HintService.stepsFor(GameState.initial(laser()), [
+        Move.right,
+        Move.right,
+      ]);
+      expect(steps, hasLength(1));
+      expect(steps.single.from, const Position(0, 0));
+      expect(steps.single.to, const Position(1, 0));
+      expect(steps.single.blocked, isFalse);
+    });
+
+    test('a 0-move echo in a solution replays', () {
+      final level = LevelLoader.fromMap({
+        'id': 't',
+        'name': 't',
+        'runLimit': 2,
+        'grid': ['S.E'],
+        'solution': [
+          <String>[],
+          ['R', 'R'],
+        ],
+      });
+      expect(HintService.pathFor(level, 1), const [
+        Position(0, 0),
+        Position(1, 0),
+        Position(2, 0),
+      ]);
+    });
+  });
 }

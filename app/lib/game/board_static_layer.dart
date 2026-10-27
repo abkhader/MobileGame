@@ -6,9 +6,11 @@ import 'package:echo_core/echo_core.dart';
 import 'board_layout.dart';
 import 'palette.dart' as palette;
 
-/// The parts of the board that never move: floor, grid, walls and exit
-/// frames, recorded once into an image at the screen's pixel density, plus
-/// the per-tile geometry the animated layer reuses every frame.
+/// The parts of the board that never move: floor, grid, walls, exit
+/// frames, laser emitters with their beat numbers and the cracked-floor
+/// base, recorded once into an image at the screen's pixel density, plus
+/// the per-tile geometry the animated layer reuses every frame. Holes,
+/// beams and Shades change during play, so they are drawn live.
 ///
 /// Rebuilt only when the board's size or pixel density really changes;
 /// Flame reports a resize on every widget rebuild, even at the same size.
@@ -55,6 +57,17 @@ class BoardStaticLayer {
 
   /// The battery ring's bounds, centred on the origin.
   Rect ringRect = Rect.zero;
+
+  /// Laser tiles in reading order, each beat and the beam's two ends (just
+  /// inside the emitters).
+  final List<Position> laserPositions = [];
+  final List<int> laserBeats = [];
+  final List<Offset> beamStarts = [];
+  final List<Offset> beamEnds = [];
+
+  /// Cracked tiles in reading order and the hole each one leaves.
+  final List<Position> crackedPositions = [];
+  final List<RRect> holeRects = [];
 
   BoardLayout? get layout => _layout;
 
@@ -110,6 +123,12 @@ class BoardStaticLayer {
     doorRects.clear();
     doorTops.clear();
     doorBottoms.clear();
+    laserPositions.clear();
+    laserBeats.clear();
+    beamStarts.clear();
+    beamEnds.clear();
+    crackedPositions.clear();
+    holeRects.clear();
     sparkCenters
       ..clear()
       ..addAll([for (final p in level.sparks) layout.centerOf(p)]);
@@ -144,6 +163,23 @@ class BoardStaticLayer {
             break;
         }
       }
+    }
+    for (final p in _readingOrder(level.lasers.keys)) {
+      final (a, b) = _emitterCentres(layout, p);
+      final inset = (b - a) / (b - a).distance * (cell * 0.08);
+      laserPositions.add(p);
+      laserBeats.add(level.lasers[p]!);
+      beamStarts.add(a + inset);
+      beamEnds.add(b - inset);
+    }
+    for (final p in _readingOrder(level.cracked)) {
+      crackedPositions.add(p);
+      holeRects.add(
+        RRect.fromRectAndRadius(
+          layout.rectOf(p).deflate(cell * 0.1),
+          Radius.circular(cell * 0.14),
+        ),
+      );
     }
     doorHalfDown = Rect.fromLTWH(0, 0, doorW, cell / 2);
     doorHalfUp = Rect.fromLTWH(0, -cell / 2, doorW, cell / 2);
@@ -196,6 +232,8 @@ class BoardStaticLayer {
         }
       }
     }
+    _recordCracks(canvas, layout);
+    _recordEmitters(canvas, layout);
     final picture = recorder.endRecording();
     _disposeImage();
     _image = picture.toImageSync(pw, ph);
@@ -203,5 +241,98 @@ class BoardStaticLayer {
     _builds++;
     _src = Rect.fromLTWH(0, 0, pw.toDouble(), ph.toDouble());
     _dst = Rect.fromLTWH(0, 0, pw / dpr, ph / dpr);
+  }
+
+  static List<Position> _readingOrder(Iterable<Position> ps) =>
+      ps.toList()..sort((a, b) => a.y != b.y ? a.y - b.y : a.x - b.x);
+
+  /// A laser runs between two emitters on opposite tile edges: across the
+  /// tile, or up and down when walls (or the board's edge) close it in on
+  /// the left and right but not above and below.
+  bool _vertical(Position p) {
+    bool open(Position q) =>
+        level.inBounds(q) && level.tileAt(q).kind != TileKind.wall;
+    final sidesShut =
+        !open(Position(p.x - 1, p.y)) && !open(Position(p.x + 1, p.y));
+    final endsShut =
+        !open(Position(p.x, p.y - 1)) && !open(Position(p.x, p.y + 1));
+    return sidesShut && !endsShut;
+  }
+
+  (Offset, Offset) _emitterCentres(BoardLayout layout, Position p) {
+    final r = layout.rectOf(p);
+    final e = layout.cellSize * 0.09;
+    return _vertical(p)
+        ? (Offset(r.center.dx, r.top + e), Offset(r.center.dx, r.bottom - e))
+        : (Offset(r.left + e, r.center.dy), Offset(r.right - e, r.center.dy));
+  }
+
+  /// Cracked tiles: a slightly lighter slab with a few cracks.
+  void _recordCracks(Canvas canvas, BoardLayout layout) {
+    if (level.cracked.isEmpty) return;
+    final cell = layout.cellSize;
+    final slab = Paint()..color = palette.cracked;
+    final line = Paint()
+      ..color = palette.crack
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1, cell * 0.035)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final rr in holeRects) {
+      canvas.drawRRect(rr, slab);
+      final r = rr.outerRect;
+      Offset at(double fx, double fy) =>
+          Offset(r.left + r.width * fx, r.top + r.height * fy);
+      final path = Path()
+        ..moveTo(at(0.12, 0.3).dx, at(0.12, 0.3).dy)
+        ..lineTo(at(0.38, 0.42).dx, at(0.38, 0.42).dy)
+        ..lineTo(at(0.5, 0.2).dx, at(0.5, 0.2).dy)
+        ..moveTo(at(0.38, 0.42).dx, at(0.38, 0.42).dy)
+        ..lineTo(at(0.55, 0.62).dx, at(0.55, 0.62).dy)
+        ..lineTo(at(0.86, 0.55).dx, at(0.86, 0.55).dy)
+        ..moveTo(at(0.55, 0.62).dx, at(0.55, 0.62).dy)
+        ..lineTo(at(0.45, 0.88).dx, at(0.45, 0.88).dy);
+      canvas.drawPath(path, line);
+    }
+  }
+
+  /// Two dark posts per laser, the beat number on the first.
+  void _recordEmitters(Canvas canvas, BoardLayout layout) {
+    if (level.lasers.isEmpty) return;
+    final cell = layout.cellSize;
+    final post = Paint()..color = palette.laserEmitter;
+    final tip = Paint()..color = palette.laser;
+    final size = cell * 0.16;
+    for (var i = 0; i < laserPositions.length; i++) {
+      final (a, b) = _emitterCentres(layout, laserPositions[i]);
+      for (final c in [a, b]) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: c, width: size, height: size),
+            Radius.circular(size * 0.25),
+          ),
+          post,
+        );
+        canvas.drawCircle(c, size * 0.18, tip);
+      }
+      final builder =
+          ParagraphBuilder(
+              ParagraphStyle(
+                textAlign: TextAlign.center,
+                fontSize: math.max(8, cell * 0.2),
+                fontWeight: FontWeight.w700,
+              ),
+            )
+            ..pushStyle(TextStyle(color: palette.laserBeat))
+            ..addText('${laserBeats[i]}');
+      final paragraph = builder.build()
+        ..layout(ParagraphConstraints(width: cell * 0.4));
+      final r = layout.rectOf(laserPositions[i]);
+      canvas.drawParagraph(
+        paragraph,
+        Offset(r.right - cell * 0.42, r.top + cell * 0.04),
+      );
+      paragraph.dispose();
+    }
   }
 }

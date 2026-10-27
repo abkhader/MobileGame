@@ -6,6 +6,9 @@ class HintService {
 
   /// The player's positions during run [runIndex] of the stored solution,
   /// starting at the level start; null without a solution or past its end.
+  ///
+  /// A run that a hit (or the tick cap) already ended is never ended again:
+  /// `Rules.endRun` only closes a run still in play.
   static List<Position>? pathFor(Level level, int runIndex) {
     final solution = level.solution;
     if (solution == null || runIndex < 0 || runIndex >= solution.length) {
@@ -76,16 +79,25 @@ class HintService {
     var state = s;
     for (final m in beats) {
       final next = Rules.step(state, m);
-      if (next.runIndex != state.runIndex) break;
+      // A beat that walks into a hit ends the run, but Pip still steps onto
+      // that tile first: show it, then stop.
+      final hit = next.lastHits.pip;
+      if (next.runIndex != state.runIndex && !hit) break;
+      final to = Rules.moveTarget(
+        state.level,
+        state.player,
+        m,
+        state.openDoors,
+      );
       steps.add(
         HintStep(
           move: m,
           from: state.player,
-          to: next.player,
-          blocked: m != Move.wait && next.player == state.player,
+          to: to,
+          blocked: m != Move.wait && to == state.player,
         ),
       );
-      if (next.status != GameStatus.playing) break;
+      if (hit || next.status != GameStatus.playing) break;
       state = next;
     }
     return steps;

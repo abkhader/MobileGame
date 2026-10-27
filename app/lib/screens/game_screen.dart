@@ -59,6 +59,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _pushed = false;
   bool _tipShown = false;
   bool _tipVisible = false;
+  String _tipText = _rewindTip;
   Timer? _tipTimer;
   // Latched by the first beat: the 1-01 thumb hint never comes back.
   bool _moved = false;
@@ -149,6 +150,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
     if (c.state.tick > 0 || c.state.runIndex > 0) _moved = true;
     if (c.lastEvent == GameEvent.runEnded) _onRewound();
+    if (c.lastEvent == GameEvent.hit) _onZapped();
     _syncHint();
     setState(() {});
   }
@@ -193,6 +195,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const _rewindTip =
       'Echo created. It will repeat every move you just made.';
   static const _tipDuration = Duration(milliseconds: 3500);
+  static const _zapped = 'Zapped! Pip rewinds.';
+  static const _zappedDuration = Duration(seconds: 2);
 
   /// A run ended and play goes on: explain the echo, for the first rewinds.
   void _onRewound() {
@@ -200,10 +204,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final progress = widget.services.progress;
     if (progress.rewindTipsShown >= _rewindTipsMax) return;
     unawaited(progress.markRewindTipShown().catchError((_) {}));
+    _showBanner(_rewindTip, _tipDuration);
+  }
+
+  /// Pip was hit and play goes on in the next run: say so every time. It
+  /// takes the rewind tip's place; a hit on the last run shows the lost
+  /// card instead.
+  void _onZapped() => _showBanner(_zapped, _zappedDuration);
+
+  void _showBanner(String text, Duration duration) {
     _tipTimer?.cancel();
-    _tipTimer = Timer(_tipDuration, () {
+    _tipTimer = Timer(duration, () {
       if (mounted) setState(() => _tipVisible = false);
     });
+    _tipText = text;
     _tipShown = true;
     _tipVisible = true;
   }
@@ -220,7 +234,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         if (!(pushed && sfx == Sfx.move)) sfx,
     ];
     if (services.progress.vibration) {
-      if (c.lastEvent == GameEvent.won) {
+      if (c.lastEvent == GameEvent.won || c.lastPipHit != null) {
         Haptics.play(HapticKind.heavy);
       } else if (sounds.contains(Sfx.plate) || sounds.contains(Sfx.spark)) {
         Haptics.play(HapticKind.medium);
@@ -641,7 +655,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     child: AnimatedOpacity(
                       opacity: _tipVisible ? 1 : 0,
                       duration: const Duration(milliseconds: 250),
-                      child: _TipBanner(text: _rewindTip),
+                      child: _TipBanner(text: _tipText),
                     ),
                   ),
                 ),
@@ -716,6 +730,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       left > 0 ? 'New echo · $left left' : 'Give up',
       enabled ? _newEcho : null,
       pulse: nudge,
+      // New echo works at tick 0 too, but the tutorial nudge waits for a
+      // move: a 0-move echo would waste 1-03's only spare run.
+      pulseActive: enabled && c.state.tick > 0,
     );
   }
 
@@ -724,6 +741,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     String label,
     VoidCallback? onPressed, {
     bool pulse = false,
+    bool? pulseActive,
   }) {
     final button = OutlinedButton.icon(
       onPressed: onPressed,
@@ -740,7 +758,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ? RepaintBoundary(
                 child: _Pulse(
                   key: const Key('new-echo-pulse'),
-                  active: onPressed != null,
+                  active: pulseActive ?? onPressed != null,
                   child: button,
                 ),
               )

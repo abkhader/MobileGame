@@ -122,23 +122,14 @@ class FinishGlide extends OneShot {
   }
 }
 
-/// A collected spark bursting into a few motes of light. It waits [delay]
-/// seconds first (Pip is still gliding onto the tile), then plays 300 ms.
-/// The motes fly along fixed directions, so nothing is allocated per frame.
-class SparkBurst extends OneShot {
-  SparkBurst() : super(0.3);
-
-  static const motes = 6;
-
-  /// Unit directions of the motes, shared by every burst.
-  static final List<Offset> directions = List.generate(motes, (i) {
-    final a = 2 * math.pi * i / motes + math.pi / 6;
-    return Offset(math.cos(a), math.sin(a));
-  }, growable: false);
+/// A [OneShot] that can wait [startAfter]'s delay before it plays, e.g.
+/// until a glide reaches the tile it happens on.
+class DelayedShot extends OneShot {
+  DelayedShot(super.duration);
 
   double _wait = 0;
 
-  /// Still waiting for Pip: the spark is drawn whole.
+  /// Started but still waiting to play.
   bool get waiting => active && _wait > 0;
 
   void startAfter(double delay) {
@@ -162,6 +153,57 @@ class SparkBurst extends OneShot {
       _wait = 0;
     }
     super.update(dt);
+  }
+}
+
+/// A collected spark bursting into a few motes of light. It waits a delay
+/// first (Pip is still gliding onto the tile), then plays 300 ms. The motes
+/// fly along fixed directions, so nothing is allocated per frame.
+class SparkBurst extends DelayedShot {
+  SparkBurst() : super(0.3);
+
+  static const motes = 6;
+
+  /// Unit directions of the motes, shared by every burst.
+  static final List<Offset> directions = List.generate(motes, (i) {
+    final a = 2 * math.pi * i / motes + math.pi / 6;
+    return Offset(math.cos(a), math.sin(a));
+  }, growable: false);
+}
+
+/// An echo fading out where it was hit (300 ms); afterwards it is not
+/// drawn.
+class EchoFizzle extends DelayedShot {
+  EchoFizzle() : super(0.3);
+}
+
+/// Dust rising from cracked floor as it collapses (300 ms). One per cracked
+/// tile, made when the level loads.
+class DustPuff extends DelayedShot {
+  DustPuff() : super(0.3);
+
+  static const motes = 8;
+
+  /// Unit directions of the motes, shared by every puff.
+  static final List<Offset> directions = List.generate(motes, (i) {
+    final a = 2 * math.pi * i / motes;
+    return Offset(math.cos(a), math.sin(a));
+  }, growable: false);
+}
+
+/// The flash and sparks where Pip was hit (500 ms). [dark] for a Shade's
+/// catch: a dark burst instead of a bright one.
+class HitBurst extends DelayedShot {
+  HitBurst() : super(0.5);
+
+  Position tile = const Position(0, 0);
+  bool dark = false;
+
+  /// Plays at [at] after [delay] seconds.
+  void startAt(Position at, {required bool dark, double delay = 0}) {
+    tile = at;
+    this.dark = dark;
+    startAfter(delay);
   }
 }
 
@@ -425,7 +467,17 @@ class BoardEffects {
   final List<SparkBurst> sparkBursts = [];
   final List<SparkReturn> sparkReturns = [];
 
-  /// Seconds of flowing time, for the echo flicker.
+  /// Pip's hit: one, reused.
+  final hitBurst = HitBurst();
+
+  /// One per echo, like the trails.
+  final List<EchoFizzle> fizzles = [];
+
+  /// One per cracked tile of the level, made once.
+  final Map<Position, DustPuff> dust = {};
+
+  /// Seconds of flowing time, for the echo flicker, the Shades' wobble and
+  /// the beams' crackle: frozen time holds them all still.
   double flicker = 0;
 
   /// Position within the low-battery flash.
@@ -452,6 +504,9 @@ class BoardEffects {
     shimmers
       ..clear()
       ..addAll([for (var i = 0; i < count; i++) Shimmer()]);
+    fizzles
+      ..clear()
+      ..addAll([for (var i = 0; i < count; i++) EchoFizzle()]);
     for (var i = shimmerFrom ?? count; i < count; i++) {
       shimmers[i].start();
     }
@@ -477,6 +532,24 @@ class BoardEffects {
     }
   }
 
+  /// Fresh dust slots, one per tile of [cracked].
+  void resetDust(Iterable<Position> cracked) {
+    dust
+      ..clear()
+      ..addAll({for (final p in cracked) p: DustPuff()});
+  }
+
+  /// Ends every hit and floor effect at once, e.g. on a new run.
+  void stopDangers() {
+    hitBurst.stop();
+    for (final f in fizzles) {
+      f.stop();
+    }
+    for (final d in dust.values) {
+      d.stop();
+    }
+  }
+
   void clearTrails() {
     for (final t in ghostTrails) {
       t.clear();
@@ -484,8 +557,8 @@ class BoardEffects {
   }
 
   /// Advances one-shots, door slides and echo trails. Looping effects (bob,
-  /// exit pulse, flicker, spark twinkle, battery flash) run only while time
-  /// [flowing].
+  /// exit pulse, flicker, spark twinkle, Shade wobble, battery flash) run
+  /// only while time [flowing].
   void update(
     double dt, {
     required bool flowing,
@@ -505,6 +578,13 @@ class BoardEffects {
     }
     for (final r in sparkReturns) {
       r.update(dt);
+    }
+    hitBurst.update(dt);
+    for (final f in fizzles) {
+      f.update(dt);
+    }
+    for (final d in dust.values) {
+      d.update(dt);
     }
     for (var i = 0; i < ghostTrails.length && i < ghostTiles.length; i++) {
       final trail = ghostTrails[i];
@@ -530,7 +610,15 @@ class BoardEffects {
 
   /// A short effect is still playing out.
   bool get busy {
-    if (nudge.active || winFlash.active || finish.active) return true;
+    if (nudge.active || winFlash.active || finish.active || hitBurst.active) {
+      return true;
+    }
+    for (final f in fizzles) {
+      if (f.active) return true;
+    }
+    for (final d in dust.values) {
+      if (d.active) return true;
+    }
     for (final d in doors.values) {
       if (d.active) return true;
     }

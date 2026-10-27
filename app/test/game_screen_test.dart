@@ -77,7 +77,7 @@ bool _waitButtonFound() => find.bySemanticsLabel('Wait').evaluate().isNotEmpty;
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('HUD starts at run 1 with New echo disabled', (t) async {
+  testWidgets('HUD starts at run 1 with New echo enabled', (t) async {
     await _pumpGame(t, '1-03');
     expect(find.text('Echo'), findsOneWidget);
     expect(find.bySemanticsLabel('Run 1 of 2'), findsOneWidget);
@@ -90,12 +90,23 @@ void main() {
     );
     expect(find.text('Undo'), findsNothing);
     expect(_waitButtonFound(), isTrue);
-    expect(_enabled(t, 'New echo · 1 left'), isFalse);
+    // Ruling: a 0-move echo is allowed while runs remain.
+    expect(_enabled(t, 'New echo · 1 left'), isTrue);
     expect(_enabled(t, 'Restart'), isTrue);
     expect(_enabled(t, 'Hint'), isTrue);
   });
 
-  testWidgets('a key tap moves once and enables New echo', (t) async {
+  testWidgets('Give up stays disabled at tick 0 on the final run', (t) async {
+    await _pumpGame(t, '1-03');
+    await t.tap(find.text('New echo · 1 left'));
+    await t.pump(_frame);
+    expect(find.bySemanticsLabel('Run 2 of 2'), findsOneWidget);
+    expect(_enabled(t, 'Give up'), isFalse);
+    await _stepRight(t);
+    expect(_enabled(t, 'Give up'), isTrue);
+  });
+
+  testWidgets('a key tap moves once; New echo stays enabled', (t) async {
     await _pumpGame(t, '1-03');
     await _stepRight(t);
     expect(find.bySemanticsLabel('Battery, 24 moves left'), findsOneWidget);

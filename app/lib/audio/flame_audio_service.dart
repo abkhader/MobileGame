@@ -17,7 +17,15 @@ class FlameAudioService implements AudioService {
     Sfx.win: 'win.wav',
     Sfx.bump: 'bump.wav',
     Sfx.spark: 'spark.wav',
+    Sfx.zap: 'zap.wav',
+    Sfx.echoZap: 'zap.wav',
+    Sfx.shade: 'shade.wav',
+    Sfx.crumble: 'crumble.wav',
+    Sfx.laserWarn: 'laser_warn.wav',
   };
+
+  /// Sounds played below full volume.
+  static const _volumes = {Sfx.echoZap: 0.5, Sfx.laserWarn: 0.35};
 
   Future<void>? _preload;
   bool _loaded = false;
@@ -39,7 +47,16 @@ class FlameAudioService implements AudioService {
   static const _duckOut = Duration(milliseconds: 150);
 
   /// Sounds that can fire every beat get a pool, not a new player each time.
-  static const _pooled = {Sfx.move, Sfx.bump, Sfx.spark};
+  static const _pooled = {
+    Sfx.move,
+    Sfx.bump,
+    Sfx.spark,
+    Sfx.zap,
+    Sfx.echoZap,
+    Sfx.shade,
+    Sfx.crumble,
+    Sfx.laserWarn,
+  };
 
   double get _targetVolume => _frozen ? _musicVolume * _duck : _musicVolume;
 
@@ -51,7 +68,7 @@ class FlameAudioService implements AudioService {
   /// One shared load; a failure clears it so the next call retries.
   Future<void> _ensureLoaded() {
     return _preload ??= FlameAudio.audioCache
-        .loadAll([..._files.values, 'ambient.wav', 'rewind.wav'])
+        .loadAll([..._files.values.toSet(), 'ambient.wav', 'rewind.wav'])
         .then<void>((_) {
           _loaded = true;
         })
@@ -75,15 +92,16 @@ class FlameAudioService implements AudioService {
   Future<void> playSfx(Sfx s) async {
     try {
       if (!_loaded) await _ensureLoaded();
+      final volume = _volumes[s] ?? 1.0;
       if (_pooled.contains(s)) {
         try {
-          await (await _ensurePool(s)).start();
+          await (await _ensurePool(s)).start(volume: volume);
           return;
         } catch (_) {
           // Fall back to a one-shot player below.
         }
       }
-      await FlameAudio.play(_files[s]!);
+      await FlameAudio.play(_files[s]!, volume: volume);
     } catch (_) {}
   }
 

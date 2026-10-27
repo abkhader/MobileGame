@@ -169,11 +169,14 @@ class FlowController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Any run end, including New echo and Give up from outside, stops a held
-  /// input so the next run does not start moving on its own.
+  /// Any run end, including New echo, Give up and a hit's forced rewind,
+  /// stops a held input so the next run does not start moving on its own.
   void _onGameChanged() {
     switch (game.lastEvent) {
-      case GameEvent.runEnded || GameEvent.won || GameEvent.lost:
+      case GameEvent.runEnded ||
+          GameEvent.hit ||
+          GameEvent.won ||
+          GameEvent.lost:
         clock.stop();
         _syncFeel();
         _from = game.previous;

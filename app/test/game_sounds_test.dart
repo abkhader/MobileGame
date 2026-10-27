@@ -114,4 +114,100 @@ void main() {
   test('restarted plays nothing', () {
     expect(soundsFor(start, start, GameEvent.restarted), isEmpty);
   });
+
+  group('dangers', () {
+    Level lvl(List<String> grid, {int runLimit = 2}) => LevelLoader.fromMap({
+      'id': 't',
+      'name': 't',
+      'runLimit': runLimit,
+      'grid': grid,
+    });
+    GameState play(GameState s, List<Move> moves) {
+      for (final m in moves) {
+        s = Rules.step(s, m);
+      }
+      return s;
+    }
+
+    const r = Move.right, w = Move.wait;
+
+    test('a laser hit plays zap; a forced rewind plays no run-end chime', () {
+      final s0 = GameState.initial(lvl(['S1.E']));
+      final s1 = Rules.step(s0, r);
+      expect(s1.runIndex, 1);
+      expect(soundsFor(s0, s1, GameEvent.hit), [Sfx.zap]);
+    });
+
+    test('a hit on the last run zaps instead of the run-end chime', () {
+      final s0 = GameState.initial(lvl(['S1.E'], runLimit: 1));
+      final s1 = Rules.step(s0, r);
+      expect(s1.status, GameStatus.lost);
+      expect(soundsFor(s0, s1, GameEvent.lost), [Sfx.zap]);
+    });
+
+    test('a Shade catch plays shade, not zap', () {
+      final s0 = GameState.initial(lvl(['Sx.E']));
+      final s1 = Rules.step(s0, w);
+      expect(soundsFor(s0, s1, GameEvent.hit), [Sfx.shade]);
+      final last = GameState.initial(lvl(['Sx.E'], runLimit: 1));
+      expect(soundsFor(last, Rules.step(last, w), GameEvent.lost), [Sfx.shade]);
+    });
+
+    test('a spark grabbed on the hit beat still chimes', () {
+      final s0 = GameState.initial(lvl(['S*x.E']));
+      final s1 = Rules.step(s0, r);
+      expect(s1.lastHits.pip, isTrue);
+      expect(soundsFor(s0, s1, GameEvent.hit), [Sfx.shade, Sfx.spark]);
+    });
+
+    test('a collapse plays crumble', () {
+      final s0 = GameState.initial(lvl(['S~.E']));
+      final s1 = Rules.step(s0, r);
+      final s2 = Rules.step(s1, r);
+      expect(s2.holes, isNotEmpty);
+      expect(soundsFor(s1, s2, GameEvent.moved), [Sfx.move, Sfx.crumble]);
+      // Rewinding over it is silent.
+      expect(soundsFor(s2, s1, GameEvent.none), isEmpty);
+    });
+
+    test('an echo falling plays the soft echo zap', () {
+      // Run 0 crosses the crack at tick 3; in run 1 Pip breaks it first.
+      var s = play(GameState.initial(lvl(['S~..E'])), [w, w, r, r]);
+      s = Rules.endRun(s);
+      s = play(s, [r, r]);
+      expect(s.holes, {const Position(1, 0)});
+      final before = s;
+      final after = Rules.step(s, w);
+      expect(after.lastHits.ghosts, [0]);
+      expect(soundsFor(before, after, GameEvent.moved), [
+        Sfx.move,
+        Sfx.echoZap,
+      ]);
+    });
+
+    test('an echo caught by a Shade plays shade', () {
+      // Run 0 is a 0-move echo waiting on the start. In run 1 Pip steps up,
+      // so the echo is the nearer light and the Shade catches it.
+      final level = lvl(['#.#..', 'xS..E']);
+      final before = Rules.endRun(GameState.initial(level));
+      expect(before.runIndex, 1);
+      final s = Rules.step(before, Move.up);
+      expect(s.lastHits.ghosts, [0]);
+      expect(soundsFor(before, s, GameEvent.moved), [Sfx.move, Sfx.shade]);
+    });
+
+    test(
+      'a laser warning plays laserWarn once on the beat before it fires',
+      () {
+        final s0 = GameState.initial(lvl(['S.2.E']));
+        final s1 = Rules.step(s0, w); // tick 1: beat 2 warns
+        expect(soundsFor(s0, s1, GameEvent.moved), [Sfx.move, Sfx.laserWarn]);
+        final s2 = Rules.step(s1, w); // tick 2: it fires, no warning
+        expect(soundsFor(s1, s2, GameEvent.moved), [Sfx.move]);
+        // Never on a rewind, a run end or a restart.
+        expect(soundsFor(s0, s1, GameEvent.none), isEmpty);
+        expect(soundsFor(s0, s1, GameEvent.runEnded), [Sfx.runEnd]);
+      },
+    );
+  });
 }

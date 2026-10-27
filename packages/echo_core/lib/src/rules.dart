@@ -193,6 +193,30 @@ abstract final class Rules {
     );
   }
 
+  /// Where an actor at [from] ends up after [m], with [openDoors] the doors
+  /// used for movement: one step, or [from] itself when the target is a wall,
+  /// a closed door or off the board. This is beat step 1 for one actor, so
+  /// the app can name the tile a hit Pip stepped onto after [step] has
+  /// already sent him back to the start.
+  static Position moveTarget(
+    Level level,
+    Position from,
+    Move m,
+    Set<Position> openDoors,
+  ) => _move(level, from, m, openDoors);
+
+  /// Where each Shade of [s] would step on the next beat if no actor moved:
+  /// [shadeStep] toward Pip and the live ghosts, with [s]'s doors. What a
+  /// Shade's eyes show. Parallel to `s.shades`; allocates distance fields, so
+  /// call it once per state, not per frame.
+  static List<Position> shadeLookahead(GameState s) {
+    if (s.shades.isEmpty) return const [];
+    final lights = [s.player, ..._live(s.ghostAlive, s.ghostPositions)];
+    return [
+      for (final sh in s.shades) shadeStep(s.level, s.openDoors, sh, lights),
+    ];
+  }
+
   /// Whether a laser with [beat] (1, 2 or 3) fires after the move that makes
   /// the run's tick equal [tick]: on ticks `n >= 1` with
   /// `n % 3 == beat % 3`. So beat 1 fires on 1, 4, 7…, beat 2 on 2, 5, 8…

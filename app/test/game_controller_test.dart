@@ -1,4 +1,5 @@
 import 'package:echo_app/game/game_controller.dart';
+import 'package:echo_app/game/hits.dart';
 import 'package:echo_core/echo_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,7 +45,8 @@ void main() {
 
   test('end run', () {
     final c = GameController(_level(['aSAE']));
-    expect(c.canEndRun, isFalse);
+    // Ruling: a 0-move echo is allowed while runs remain.
+    expect(c.canEndRun, isTrue);
     c.move(Move.left);
     expect(c.canEndRun, isTrue);
     c.endRun();
@@ -94,7 +96,8 @@ void main() {
   });
 
   test('each action notifies exactly once; ignored actions do not', () {
-    final c = GameController(_level(['aSAE']));
+    // One run: Give up at tick 0 is ignored.
+    final c = GameController(_level(['aSAE'], runLimit: 1));
     var n = 0;
     c.addListener(() => n++);
     c.undo();
@@ -118,5 +121,93 @@ void main() {
     expect(c.isBlocked(Move.down), isFalse);
     c.move(Move.right);
     expect(c.isBlocked(Move.down), isTrue, reason: 'closed door');
+  });
+
+  group('New echo at tick 0', () {
+    test('allowed on a non-final run: the echo waits on the start', () {
+      final c = GameController(_level(['aSAE'], runLimit: 3));
+      expect(c.canEndRun, isTrue);
+      c.endRun();
+      expect(c.lastEvent, GameEvent.runEnded);
+      expect(c.state.runIndex, 1);
+      expect(c.state.ghosts, [<Move>[]]);
+      expect(c.canEndRun, isTrue);
+      c.endRun();
+      expect(c.state.runIndex, 2);
+    });
+
+    test('Give up stays disabled at tick 0 on the final run', () {
+      final c = GameController(_level(['aSAE'], runLimit: 1));
+      expect(c.canEndRun, isFalse);
+      c.endRun();
+      expect(c.state.status, GameStatus.playing);
+      c.move(Move.left);
+      expect(c.canEndRun, isTrue);
+    });
+
+    test('nothing ends once the level is over', () {
+      final c = GameController(_level(['SE']));
+      c.move(Move.right);
+      expect(c.state.status, GameStatus.won);
+      expect(c.canEndRun, isFalse);
+    });
+  });
+
+  group('hits', () {
+    test('a laser hit is a forced rewind: event hit, a snap, the hit tile', () {
+      final c = GameController(_level(['S1.E']));
+      expect(c.lastPipHit, isNull);
+      c.move(Move.right);
+      expect(c.lastEvent, GameEvent.hit);
+      expect(c.state.runIndex, 1);
+      expect(c.state.player, const Position(0, 0));
+      expect(c.previous, isNull);
+      expect(c.canUndo, isFalse);
+      expect(c.lastPipHit!.at, const Position(1, 0));
+      expect(c.lastPipHit!.cause, HitCause.laser);
+    });
+
+    test('a hit on the last run is lost, Pip on the hit tile', () {
+      final c = GameController(_level(['S1.E'], runLimit: 1));
+      c.move(Move.right);
+      expect(c.lastEvent, GameEvent.lost);
+      expect(c.state.lastHits.pip, isTrue);
+      expect(c.previous, isNotNull);
+      expect(c.lastPipHit!.at, const Position(1, 0));
+    });
+
+    test('falling into a hole and a Shade catch name their cause', () {
+      final hole = GameController(_level(['S~.E']));
+      for (final m in [Move.right, Move.right, Move.left]) {
+        hole.move(m);
+      }
+      expect(hole.lastEvent, GameEvent.hit);
+      expect(hole.lastPipHit!.cause, HitCause.hole);
+      expect(hole.lastPipHit!.at, const Position(1, 0));
+
+      final shade = GameController(_level(['Sx.E']));
+      shade.move(Move.wait);
+      expect(shade.lastEvent, GameEvent.hit);
+      expect(shade.lastPipHit!.cause, HitCause.shade);
+      expect(shade.lastPipHit!.at, const Position(0, 0));
+    });
+
+    test('lastPipHit clears on the next change', () {
+      final c = GameController(_level(['S1.E']));
+      c.move(Move.right);
+      c.move(Move.wait);
+      expect(c.lastPipHit, isNull);
+      c.restart();
+      c.move(Move.right);
+      expect(c.lastPipHit, isNotNull);
+      c.restart();
+      expect(c.lastPipHit, isNull);
+    });
+
+    test('isBlocked is false for a step into a laser from the start', () {
+      final c = GameController(_level(['S1.E']));
+      expect(c.isBlocked(Move.right), isFalse);
+      expect(c.isBlocked(Move.left), isTrue);
+    });
   });
 }

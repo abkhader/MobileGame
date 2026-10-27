@@ -299,4 +299,19 @@ void main() {
     f.releaseAll();
     expect(f.releaseEpoch.value, epoch + 1);
   });
+
+  test('a hit stops the clock and snaps like a run end', () {
+    final game = GameController(_level(['S.2..E']));
+    final f = _flow(game);
+    f.setIntent(IntentKind.move, Move.right);
+    _hold(f, 0.25); // beat 1 lands on (1, 0); beat 2 steps onto the laser
+    expect(game.lastEvent, GameEvent.hit);
+    expect(game.state.runIndex, 1);
+    expect(f.clock.running, isFalse);
+    expect(f.frozen, isTrue);
+    expect(f.from, isNull);
+    // The next run does not start walking on its own.
+    _hold(f, 0.6);
+    expect(game.state.tick, 0);
+  });
 }

@@ -138,6 +138,71 @@ def ambient():
     return [x * gain for x in out]
 
 
+def zap():
+    # An electric crackle: a falling buzz (square-ish, 900 -> 180 Hz) under
+    # short noise bursts, 0.32 s.
+    n = seconds(0.32)
+    rng = random.Random(11)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        k = i / n
+        f = 900 * (1 - k) + 180 * k
+        phase += 2 * math.pi * f / RATE
+        buzz = math.tanh(3 * math.sin(phase)) * 0.35
+        # Noise gated on and off every ~12 ms: the crackle.
+        gate = 1.0 if (i // seconds(0.012)) % 3 != 1 else 0.25
+        noise = rng.uniform(-1, 1) * 0.3 * gate
+        out.append((buzz + noise) * math.exp(-5 * k))
+    return fade(out, 0.002, 0.04)
+
+
+def crumble():
+    # Breaking floor: low rumbling noise with a few gritty clicks, 0.4 s.
+    n = seconds(0.4)
+    rng = random.Random(23)
+    out = []
+    low = 0.0
+    for i in range(n):
+        k = i / n
+        low += 0.08 * (rng.uniform(-1, 1) - low)  # one-pole low-pass
+        click = rng.uniform(-1, 1) if rng.random() < 0.004 else 0.0
+        env = math.exp(-4 * k) * min(1.0, i / seconds(0.01))
+        out.append((2.2 * low + 0.4 * click) * env)
+    return fade(out, 0.003, 0.05)
+
+
+def shade():
+    # A low, soft "whoomp": a sine diving 225 -> 55 Hz, a quick swell and a
+    # slow fall, 0.36 s.
+    n = seconds(0.36)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        k = i / n
+        f = 170 * (1 - k) ** 2 + 55
+        phase += 2 * math.pi * f / RATE
+        swell = (1 - math.exp(-30 * k)) * math.exp(-5 * k)
+        out.append(0.75 * swell * (math.sin(phase) + 0.25 * math.sin(2 * phase)))
+    return fade(out, 0.004, 0.05)
+
+
+def laser_warn():
+    # A quiet electric hum with a tremolo, rising slightly, 0.14 s.
+    n = seconds(0.14)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        k = i / n
+        f = 1150 + 150 * k
+        phase += 2 * math.pi * f / RATE
+        trem = 0.6 + 0.4 * math.sin(2 * math.pi * 40 * i / RATE)
+        env = math.sin(math.pi * k)
+        out.append(0.35 * env * trem * (math.sin(phase)
+                                        + 0.2 * math.sin(3 * phase)))
+    return fade(out, 0.004, 0.02)
+
+
 def write(name, samples):
     path = os.path.join(OUT, name + '.wav')
     with wave.open(path, 'wb') as w:
@@ -161,6 +226,10 @@ def main():
     write('spark', spark())
     write('rewind', rewind())
     write('ambient', ambient())
+    write('zap', zap())
+    write('crumble', crumble())
+    write('shade', shade())
+    write('laser_warn', laser_warn())
 
 
 if __name__ == '__main__':

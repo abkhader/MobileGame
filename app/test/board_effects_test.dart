@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:echo_app/game/board_effects.dart';
+import 'package:echo_core/echo_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -269,6 +270,81 @@ void main() {
         expect(d.distance, closeTo(1, 1e-9));
       }
       expect(identical(SparkBurst.directions, SparkBurst.directions), isTrue);
+    });
+  });
+
+  group('dangers', () {
+    test('a fizzle waits, plays 300 ms and keeps the effects busy', () {
+      final fx = BoardEffects()..resetEchoes(2);
+      expect(fx.fizzles, hasLength(2));
+      fx.fizzles[1].startAfter(0.1);
+      expect(fx.fizzles[1].waiting, isTrue);
+      expect(fx.busy, isTrue);
+      fx.update(
+        0.1,
+        flowing: false,
+        ghostTiles: const [],
+        reduceEffects: false,
+      );
+      expect(fx.fizzles[1].waiting, isFalse);
+      fx.update(
+        0.3,
+        flowing: false,
+        ghostTiles: const [],
+        reduceEffects: false,
+      );
+      expect(fx.fizzles[1].active, isFalse);
+      expect(fx.busy, isFalse);
+    });
+
+    test('one dust puff per cracked tile, made once', () {
+      final fx = BoardEffects()
+        ..resetDust(const [Position(1, 0), Position(2, 3)]);
+      expect(fx.dust.keys, [const Position(1, 0), const Position(2, 3)]);
+      final puff = fx.dust[const Position(1, 0)]!;
+      puff.start();
+      expect(fx.busy, isTrue);
+      fx.update(
+        0.3,
+        flowing: false,
+        ghostTiles: const [],
+        reduceEffects: false,
+      );
+      expect(puff.active, isFalse);
+      expect(fx.dust[const Position(1, 0)], same(puff));
+    });
+
+    test('the hit burst lasts 500 ms; stopDangers ends everything', () {
+      final fx = BoardEffects()
+        ..resetEchoes(1)
+        ..resetDust(const [Position(0, 0)]);
+      fx.hitBurst.startAt(const Position(3, 1), dark: true);
+      expect(fx.hitBurst.tile, const Position(3, 1));
+      expect(fx.hitBurst.dark, isTrue);
+      fx.update(
+        0.45,
+        flowing: false,
+        ghostTiles: const [],
+        reduceEffects: false,
+      );
+      expect(fx.hitBurst.active, isTrue);
+      fx.fizzles[0].start();
+      fx.dust[const Position(0, 0)]!.start();
+      fx.stopDangers();
+      expect(fx.busy, isFalse);
+    });
+
+    test('the wobble clock runs only while time flows', () {
+      final fx = BoardEffects();
+      fx.update(
+        0.5,
+        flowing: false,
+        ghostTiles: const [],
+        reduceEffects: false,
+      );
+      expect(fx.flicker, 0);
+      fx.update(0.5, flowing: true, ghostTiles: const [], reduceEffects: false);
+      expect(fx.flicker, 0.5);
     });
   });
 }

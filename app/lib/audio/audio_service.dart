@@ -1,5 +1,23 @@
 /// The short sound effects the game can play.
-enum Sfx { move, plate, door, runEnd, win, bump, spark }
+///
+/// [zap]: Pip is hit by a laser or falls. [echoZap]: the same zap, softer,
+/// for an echo. [shade]: a Shade catches anyone (a low whoomp). [crumble]:
+/// cracked floor breaks. [laserWarn]: a quiet hum on the beat before a
+/// laser fires.
+enum Sfx {
+  move,
+  plate,
+  door,
+  runEnd,
+  win,
+  bump,
+  spark,
+  zap,
+  echoZap,
+  shade,
+  crumble,
+  laserWarn,
+}
 
 /// Plays the game's sound effects and background music.
 abstract interface class AudioService {
