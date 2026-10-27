@@ -199,9 +199,9 @@ void main() {
       );
     });
 
-    test('ids outside C-NN with chapter 1-3 and level 01-10 fail', () async {
+    test('ids outside C-NN with chapter 1-4 and level 01-10 fail', () async {
       const grid = _plain;
-      for (final id in ['a', '4-01', '0-01', '1-00', '1-11', '1-1', '01-01']) {
+      for (final id in ['a', '5-01', '0-01', '1-00', '1-11', '1-1', '01-01']) {
         put('$id.json', level(id, grid, 1));
       }
       final (code, out) = await run(['--write']);
@@ -213,21 +213,22 @@ void main() {
           line,
           matches(
             RegExp(
-              r"^(\S+)\.json: FAIL id '\1' is not C-NN with chapter 1-3 and level 01-10$",
+              r"^(\S+)\.json: FAIL id '\1' is not C-NN with chapter 1-4 and level 01-10$",
             ),
           ),
         );
       }
     });
 
-    test('a tip on a level other than 1-01 to 1-03 and 1-07 fails', () async {
+    test('a tip on a level outside the tip set fails', () async {
       for (final id in ['1-04', '1-05', '1-06', '1-08']) {
         put('$id.json', level(id, _plain, 1, {'tip': 'Hi.'}));
         final (code, out) = await run(['--write']);
         expect(code, 1);
         expect(
           out,
-          '$id.json: FAIL tip only allowed on levels 1-01 to 1-03 and 1-07\n',
+          '$id.json: FAIL tip only allowed on levels 1-01 to 1-03, 1-07, '
+          '4-01, 4-04 and 4-07\n',
         );
         File('${dir.path}/$id.json').deleteSync();
       }
@@ -245,6 +246,78 @@ void main() {
       final (code, out) = await run(['--write']);
       expect(code, 0);
       expect(out, '1-01.json: OK (best 4)\n');
+    });
+
+    group('chapter 4', () {
+      // A 2-run level that passes every chapter 2-4 spark rule.
+      const good = ['########', '#Sa*A.E#', '#*##*###', '########'];
+
+      test('chapter-4 ids are accepted', () async {
+        for (final id in ['4-02', '4-10']) {
+          put('$id.json', level(id, good, 2));
+        }
+        final (code, out) = await run(['--write']);
+        expect(code, 0, reason: out);
+        expect(out, '4-02.json: OK (best 6)\n4-10.json: OK (best 6)\n');
+      });
+
+      test('the run range is 2-4', () async {
+        put('4-03.json', level('4-03', _plain, 1));
+        final (code, out) = await run(['--write']);
+        expect(code, 1);
+        expect(
+          out,
+          '4-03.json: FAIL runLimit 1 outside chapter 4 range 2\u20134\n',
+        );
+      });
+
+      test('tips are allowed on 4-01, 4-04 and 4-07 only', () async {
+        for (final id in ['4-01', '4-04', '4-07']) {
+          put('$id.json', level(id, good, 2, {'tip': 'Hi.'}));
+        }
+        final (code, out) = await run(['--write']);
+        expect(code, 0, reason: out);
+        File('${dir.path}/4-01.json').deleteSync();
+        File('${dir.path}/4-04.json').deleteSync();
+        File('${dir.path}/4-07.json').deleteSync();
+        put('4-02.json', level('4-02', good, 2, {'tip': 'Hi.'}));
+        final (code2, out2) = await run(['--write']);
+        expect(code2, 1);
+        expect(
+          out2,
+          '4-02.json: FAIL tip only allowed on levels 1-01 to 1-03, 1-07, '
+          '4-01, 4-04 and 4-07\n',
+        );
+      });
+
+      test('chapter 4 needs an optional echo spark', () {
+        const forcedEcho = ['########', '#Sa*A*E#', '#*######', '########'];
+        expect(
+          sparkFailure(LevelLoader.fromMap(level('4-05', forcedEcho, 2))),
+          'no echo spark is optional (every win collects it)',
+        );
+      });
+
+      // A Shade decoy level: one run is caught, two win. The spark at (4,1)
+      // lies past the Shade (only reachable with an echo as bait) and off
+      // the winning route; the optional proof uses the avoid search, since a
+      // wall would also block the Shade.
+      test(
+        'a danger level passes --write and --check with its sparks',
+        () async {
+          put('4-07.json', level('4-07', ['*.xE.', 'S*..*'], 2));
+          final (wCode, wOut) = await run(['--write']);
+          expect(wCode, 0, reason: wOut);
+          final (code, out) = await run(['--check', '--report']);
+          expect(code, 0, reason: out);
+          final lines = out.trimRight().split('\n');
+          expect(lines[0], '4-07.json: OK (best 5)');
+          expect(
+            lines[2],
+            '  sparks: (0,0) run1, (1,1) run1, (4,1) echo optional',
+          );
+        },
+      );
     });
 
     test('a reduced solve that exceeds the budget fails', () async {

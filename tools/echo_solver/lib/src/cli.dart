@@ -11,9 +11,9 @@ const _usage =
     '[--report]';
 
 /// Allowed `runLimit` range (inclusive) per chapter.
-final _levelId = RegExp(r'^[1-3]-(0[1-9]|10)$');
-const _tipIds = {'1-01', '1-02', '1-03', '1-07'};
-const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4)};
+final _levelId = RegExp(r'^[1-4]-(0[1-9]|10)$');
+const _tipIds = {'1-01', '1-02', '1-03', '1-07', '4-01', '4-04', '4-07'};
+const _chapterRanges = {'1': (1, 2), '2': (2, 3), '3': (3, 4), '4': (2, 4)};
 
 /// Runs the solver CLI and returns the process exit code.
 ///
@@ -222,7 +222,7 @@ String? _qualityFailure(
 ) {
   final runs = level.runLimit;
   if (!_levelId.hasMatch(level.id)) {
-    return "id '${level.id}' is not C-NN with chapter 1-3 and level 01-10";
+    return "id '${level.id}' is not C-NN with chapter 1-4 and level 01-10";
   }
   final chapter = level.id.substring(0, 1);
   final (lo, hi) = _chapterRanges[chapter]!;
@@ -230,7 +230,8 @@ String? _qualityFailure(
     return 'runLimit $runs outside chapter $chapter range $lo\u2013$hi';
   }
   if (level.tip != null && !_tipIds.contains(level.id)) {
-    return 'tip only allowed on levels 1-01 to 1-03 and 1-07';
+    return 'tip only allowed on levels 1-01 to 1-03, 1-07, 4-01, 4-04 '
+        'and 4-07';
   }
   if (runs > 1) {
     final reduced = LevelLoader.fromMap(
@@ -254,7 +255,7 @@ String? _qualityFailure(
 }
 
 /// The spark checks: exactly 3 sparks, each on a floor tile and collectible
-/// in a winning play, and in chapters 2-3 at least one that needs an echo
+/// in a winning play, and in chapters 2-4 at least one that needs an echo
 /// (no winning play collects it in run 1) and is also optional (some winning
 /// play never steps any actor onto it, see [_avoidable]). Returns the first
 /// failure, or null after adding `(x,y) run1`, `(x,y) echo` or
@@ -303,7 +304,7 @@ String? sparkFailure(
     }
     found.add('${at(p)} $label');
   }
-  if (level.id.startsWith(RegExp('[23]-'))) {
+  if (level.id.startsWith(RegExp('[234]-'))) {
     if (!echo) return 'no spark needs an echo';
     if (!optionalEcho) {
       return 'no echo spark is optional (every win collects it)';
@@ -316,51 +317,58 @@ String? sparkFailure(
 /// Whether some winning play within `runLimit` never steps any actor onto
 /// [cell], or null when the search went over [maxNodes].
 ///
-/// Exact: the level with [cell] turned into a wall (and its spark dropped)
-/// is solvable exactly when such a play exists. A winning play that never
-/// steps an actor onto the floor cell never even tries to (a move onto
-/// floor always succeeds), so the wall changes nothing and it also wins the
-/// walled level. Conversely, in a winning play of the walled level an actor
-/// that tries to step onto the wall just stays put, which is exactly what
-/// [Move.wait] does (walls are not plates, so doors are untouched); turning
-/// every such player move into a wait gives the same positions tick by tick
-/// for players and ghosts alike, because ghosts replay their run's player
-/// moves. That play wins the original level with no actor ever on [cell].
-/// So "no player steps there" and "no actor steps there" coincide.
+/// On a level with dangers this is [solveTracked] with `avoid: cell`, which
+/// forbids any actor of any world to enter [cell]: exact by construction.
+/// Walling the cell is not used there: a wall blocks Shades too (they would
+/// path differently), so the walled level is a different level.
 ///
-/// The level's dangers (lasers, cracked floor, Shade starts) are carried
-/// over unchanged; [cell] is a spark, so it is never one of them.
-// TODO(Task 2): re-justify this walling argument now that dangers exist
-// (hits end runs, Shades chase actors, cracks collapse behind them).
+/// Without dangers the cell is walled and the level solved, as before
+/// dangers existed; that is exact. A winning play that never steps an actor
+/// onto the floor cell never even tries to (a move onto floor always
+/// succeeds), so the wall changes nothing and it also wins the walled level.
+/// Conversely, in a winning play of the walled level an actor that tries to
+/// step onto the wall just stays put, which is exactly what [Move.wait] does
+/// (walls are not plates, so doors are untouched); turning every such player
+/// move into a wait gives the same positions tick by tick for players and
+/// ghosts alike, because ghosts replay their run's player moves. That play
+/// wins the original level with no actor ever on [cell]. So "no player steps
+/// there" and "no actor steps there" coincide.
 bool? _avoidable(Level level, Position cell, int? maxNodes) {
-  final walled = Level(
-    id: level.id,
-    name: level.name,
-    runLimit: level.runLimit,
-    grid: [
-      for (var y = 0; y < level.height; y++)
-        [
-          for (var x = 0; x < level.width; x++)
-            Position(x, y) == cell
-                ? const Tile(TileKind.wall)
-                : level.tileAt(Position(x, y)),
-        ],
-    ],
-    start: level.start,
-    exit: level.exit,
-    plates: level.plates,
-    doors: level.doors,
-    sparks: [
-      for (final s in level.sparks)
-        if (s != cell) s,
-    ],
-    lasers: level.lasers,
-    cracked: level.cracked,
-    shadeStarts: level.shadeStarts,
-  );
-  final result = maxNodes == null
-      ? solve(walled)
-      : solve(walled, maxNodes: maxNodes);
+  final SolveResult result;
+  if (hasDangers(level)) {
+    result = maxNodes == null
+        ? solveTracked(level, avoid: cell)
+        : solveTracked(level, avoid: cell, maxNodes: maxNodes);
+  } else {
+    final walled = Level(
+      id: level.id,
+      name: level.name,
+      runLimit: level.runLimit,
+      grid: [
+        for (var y = 0; y < level.height; y++)
+          [
+            for (var x = 0; x < level.width; x++)
+              Position(x, y) == cell
+                  ? const Tile(TileKind.wall)
+                  : level.tileAt(Position(x, y)),
+          ],
+      ],
+      start: level.start,
+      exit: level.exit,
+      plates: level.plates,
+      doors: level.doors,
+      sparks: [
+        for (final s in level.sparks)
+          if (s != cell) s,
+      ],
+      lasers: const {},
+      cracked: const {},
+      shadeStarts: const [],
+    );
+    result = maxNodes == null
+        ? solve(walled)
+        : solve(walled, maxNodes: maxNodes);
+  }
   return switch (result) {
     Solved() => true,
     Unsolvable() => false,

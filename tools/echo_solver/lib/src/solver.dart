@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:echo_core/echo_core.dart';
 
 part 'spark_proofs.dart';
+part 'tracked_runs.dart';
 
 sealed class SolveResult {
   const SolveResult();
@@ -46,13 +47,50 @@ class _BudgetAbort implements Exception {
 /// on the joint state (tick, live runs, every actor in every live world), so
 /// an A* search over joint states is exact and finite. [maxNodes] caps the
 /// joint states expanded, across all run counts.
+///
+/// A level with dangers (lasers, cracked floor or Shades) is searched by
+/// [solveTracked]'s every-world search; any other level by [_JointRuns],
+/// exactly as before dangers existed.
 SolveResult solve(Level level, {int maxNodes = 30000000}) =>
-    _JointSearch(level, maxNodes).solve();
+    _JointSearch(level, maxNodes, tracked: hasDangers(level)).solve();
+
+/// Whether [level] has lasers, cracked floor or Shades.
+bool hasDangers(Level level) =>
+    level.lasers.isNotEmpty ||
+    level.cracked.isNotEmpty ||
+    level.shadeStarts.isNotEmpty;
+
+/// [solve] with the every-world search ([_TrackedRuns]) on any level: exact
+/// with or without dangers, and the search [solve] uses for levels with
+/// dangers. Tests compare it with [solve] on levels without dangers.
+///
+/// With [avoid], only plays in which no actor (a player or a live ghost, in
+/// any world) ever stands on that cell count: Solved means some winning
+/// play within `runLimit` runs never steps an actor onto it (its best score
+/// and solution are the cheapest such play's). Plays are compared up to the
+/// final run's win: an earlier run still going then can end at that tick
+/// instead, which leaves the final world unchanged.
+SolveResult solveTracked(
+  Level level, {
+  int maxNodes = 30000000,
+  Position? avoid,
+}) => _JointSearch(
+  level,
+  maxNodes,
+  tracked: true,
+  avoid: avoid == null ? -1 : avoid.y * level.width + avoid.x,
+).solve();
 
 /// The previous run-by-run iterative-deepening search, kept only as a test
 /// reference for [solve]. [prune] switches its useless-run rule so tests can
 /// compare the pruned search against the unpruned one. [Solved.nodes] here
 /// counts `Rules.step` calls.
+///
+/// On a level with dangers the useless-run rule is off (a run that touches
+/// no plate or door may still lure a Shade, hold up a crack, or end on a
+/// hit), a run may also end at tick 0 (its echo waiting on the start is a
+/// light for Shades), and the last run's memo key also holds the holes, the
+/// Shades and which ghosts are alive.
 SolveResult solveSequential(
   Level level, {
   int maxNodes = 30000000,
@@ -89,7 +127,9 @@ SolveResult _solve(Level level, int maxNodes, {required bool prune}) {
 }
 
 class _Search {
-  _Search(this.level, this.maxNodes, {required this.prune}) {
+  _Search(this.level, this.maxNodes, {required bool prune})
+    : dangers = hasDangers(level),
+      prune = prune && !hasDangers(level) {
     _computeDistances();
     d0 = dist(level.start);
   }
@@ -99,6 +139,7 @@ class _Search {
   final Level level;
   final int maxNodes;
   final bool prune;
+  final bool dangers;
   late final int d0;
   int nodes = 0;
   late final List<int> _dist;
@@ -139,7 +180,12 @@ class _Search {
 
   GameState? run(int bound) {
     final root = GameState.initial(level);
-    return _dfs(root, bound, level.runLimit == 1 ? <int, int>{} : null, false);
+    return _dfs(
+      root,
+      bound,
+      level.runLimit == 1 ? <Object, int>{} : null,
+      false,
+    );
   }
 
   GameState _step(GameState s, Move m) {
@@ -163,7 +209,7 @@ class _Search {
   GameState? _dfs(
     GameState state,
     int bound,
-    Map<int, int>? memo,
+    Map<Object, int>? memo,
     bool interacted,
   ) {
     if (state.status == GameStatus.won) return state;
@@ -193,10 +239,9 @@ class _Search {
       );
       if (win != null) return win;
     }
-    if (interacted &&
+    if ((interacted || dangers) &&
         !lastRun &&
-        state.tick > 0 &&
-        state.currentRun.last != Move.wait &&
+        (state.tick > 0 ? state.currentRun.last != Move.wait : dangers) &&
         remaining >= d0) {
       final next = Rules.endRun(state);
       final win = _dfs(next, bound, _memoFor(state, next, memo), false);
@@ -207,16 +252,33 @@ class _Search {
 
   /// A fresh memo for every entry into the last run; the current one while
   /// staying in it; none before it.
-  Map<int, int>? _memoFor(GameState from, GameState to, Map<int, int>? memo) {
+  Map<Object, int>? _memoFor(
+    GameState from,
+    GameState to,
+    Map<Object, int>? memo,
+  ) {
     if (to.runIndex == level.runLimit - 1) {
-      return to.runIndex > from.runIndex ? <int, int>{} : memo;
+      return to.runIndex > from.runIndex ? <Object, int>{} : memo;
     }
     return null;
   }
 
-  /// Canonical packed key of tick, player and every ghost position.
-  int _key(GameState s) {
+  /// Canonical packed key of tick, player and every ghost position; with
+  /// dangers also which ghosts are alive, the holes and the Shades.
+  Object _key(GameState s) {
     final cells = level.width * level.height;
+    if (dangers) {
+      String at(Position p) => '${p.y * level.width + p.x}';
+      final holes = [for (final h in s.holes) at(h)]..sort();
+      return [
+        s.tick,
+        at(s.player),
+        s.ghostPositions.map(at).join(','),
+        s.ghostAlive.map((a) => a ? 1 : 0).join(),
+        holes.join(','),
+        s.shades.map(at).join(','),
+      ].join(';');
+    }
     var key = s.tick;
     key = key * cells + s.player.y * level.width + s.player.x;
     for (final g in s.ghostPositions) {
@@ -236,7 +298,12 @@ const _gone = 6;
 const _unreachable = 1 << 30;
 
 class _JointSearch {
-  _JointSearch(this.level, this.maxNodes) : cells = level.width * level.height {
+  _JointSearch(
+    this.level,
+    this.maxNodes, {
+    this.tracked = false,
+    this.avoid = -1,
+  }) : cells = level.width * level.height {
     _target = Int32List(cells * 4);
     _doorChannel = Int32List(cells)..fillRange(0, cells, -1);
     _plateChannel = Int32List(cells)..fillRange(0, cells, -1);
@@ -279,6 +346,15 @@ class _JointSearch {
   final int cells;
   int nodes = 0;
 
+  /// Search with [_TrackedRuns] (every world tracked, dangers exact) instead
+  /// of [_JointRuns].
+  final bool tracked;
+
+  /// A cell no actor may enter ([solveTracked]), or -1.
+  final int avoid;
+
+  late final _DangerTables _dangers = _DangerTables(this);
+
   /// Cell reached by direction `d` (0-3) from cell `c` at `c * 4 + d`, or -1
   /// for a wall or the grid edge. Doors are resolved per world.
   late final Int32List _target;
@@ -308,11 +384,18 @@ class _JointSearch {
     Solved? best;
     try {
       for (var m = 1; m <= level.runLimit; m++) {
-        final found = _JointRuns(
-          this,
-          m,
-          fewerRunsWin: best != null,
-        ).cheapest(best?.bestScore);
+        final found = tracked
+            ? _TrackedRuns(
+                this,
+                _dangers,
+                m,
+                avoid: avoid,
+              ).cheapest(best?.bestScore)
+            : _JointRuns(
+                this,
+                m,
+                fewerRunsWin: best != null,
+              ).cheapest(best?.bestScore);
         if (found != null) best = found;
       }
     } on _BudgetAbort {

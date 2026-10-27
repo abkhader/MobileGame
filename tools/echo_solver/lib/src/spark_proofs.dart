@@ -42,15 +42,22 @@ const sparkProofMaxNodes = 3000000;
 /// "collectible, and no winning play collects it in run index 0": no play
 /// has run 0 collect, and some play has a later run `j` collect (an OR over
 /// `j`, the final run first).
+///
+/// On a level with dangers (see [hasDangers]), or with [tracked], both
+/// searches are [_TrackedRuns]' every-world searches instead
+/// ([_TrackedRuns.collects] for the spark); tests use [tracked] to compare
+/// them on levels without dangers.
 SparkProof sparkProof(
   Level level,
   Position spark, {
   int maxNodes = sparkProofMaxNodes,
+  bool tracked = false,
 }) {
   if (!level.sparks.contains(spark)) {
     throw ArgumentError.value(spark, 'spark', 'is not a spark of the level');
   }
-  final s = _JointSearch(level, maxNodes);
+  final everyWorld = tracked || hasDangers(level);
+  final s = _JointSearch(level, maxNodes, tracked: everyWorld);
   try {
     if (s._dist[s._startIndex] > Rules.maxTicksPerRun) {
       return const SparkProof(collectible: false, echoNeeded: false);
@@ -59,12 +66,26 @@ SparkProof sparkProof(
     final winners = <bool>[];
     for (var m = 1; m <= level.runLimit; m++) {
       final fewer = winners.contains(true);
-      winners.add(_JointRuns(s, m, fewerRunsWin: fewer).cheapest(null) != null);
+      winners.add(
+        (everyWorld
+                ? _TrackedRuns(s, s._dangers, m).cheapest(null)
+                : _JointRuns(s, m, fewerRunsWin: fewer).cheapest(null)) !=
+            null,
+      );
     }
     final cell = s._index(spark);
     // Whether some m-run play wins with run j collecting.
     bool collects(int m, int j) {
       if (!winners[m - 1]) return false;
+      if (everyWorld) {
+        return _TrackedRuns(
+          s,
+          s._dangers,
+          m,
+          collector: j,
+          spark: cell,
+        ).collects();
+      }
       final fewer = winners.sublist(0, m - 1).contains(true);
       return _SparkRuns(s, m, fewer, j, cell).reachable();
     }
@@ -96,7 +117,9 @@ SparkProof sparkProof(
 
 /// Whether one actor alone can step onto [cell] within one run without
 /// reaching the exit first (it would win there). Alone, it opens a door only
-/// by standing on that door's plate the tick before.
+/// by standing on that door's plate the tick before. Dangers are ignored:
+/// they only cut runs short, so this stays an over-approximation and a
+/// "no" stays a proof.
 bool _soloReaches(_JointSearch s, int cell) {
   final exit = s._index(s.level.exit);
   final seen = List.filled(s.cells, false);
