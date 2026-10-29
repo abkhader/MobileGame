@@ -4,7 +4,7 @@ name: Web preview
 # served by GitHub Pages at https://abkhader.github.io/MobileGame/
 on:
   push:
-    branches: [main, feat/levels-and-sound, feat/story, feat/rewind, feat/flow, feat/sparks]
+    branches: [main, feat/levels-and-sound, feat/story, feat/rewind, feat/flow, feat/sparks, feat/dangers]
   workflow_dispatch:
 
 permissions:
