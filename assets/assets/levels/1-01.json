@@ -1,0 +1,20 @@
+{
+  "id": "1-01",
+  "name": "First Step",
+  "runLimit": 1,
+  "tip": "Drag anywhere to move Pip.",
+  "grid": [
+    "#######",
+    "#S***E#",
+    "#######"
+  ],
+  "bestScore": 4,
+  "solution": [
+    [
+      "R",
+      "R",
+      "R",
+      "R"
+    ]
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "1-03",
+  "name": "Echo",
+  "runLimit": 2,
+  "tip": "Tap New echo. Pip starts over, and your echo repeats every move.",
+  "grid": [
+    "#######",
+    "#Sa*AE#",
+    "#**####"
+  ],
+  "bestScore": 5,
+  "solution": [
+    [
+      "R"
+    ],
+    [
+      "R",
+      "R",
+      "R",
+      "R"
+    ]
+  ]
+}

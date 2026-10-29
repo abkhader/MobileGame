@@ -1,0 +1,46 @@
+{
+  "id": "4-01",
+  "name": "Live Wire",
+  "runLimit": 2,
+  "tip": "Lasers fire on their beat. Watch the glow, then step through.",
+  "grid": [
+    "######*#",
+    "#a..1S.#",
+    "######.#",
+    "#.1..2*#",
+    "#.######",
+    "#.######",
+    "#.33.AE#",
+    "#####*##",
+    "########"
+  ],
+  "bestScore": 22,
+  "solution": [
+    [
+      "W",
+      "L",
+      "L",
+      "L",
+      "L"
+    ],
+    [
+      "R",
+      "D",
+      "D",
+      "L",
+      "L",
+      "L",
+      "W",
+      "L",
+      "L",
+      "D",
+      "D",
+      "D",
+      "R",
+      "R",
+      "R",
+      "R",
+      "R"
+    ]
+  ]
+}

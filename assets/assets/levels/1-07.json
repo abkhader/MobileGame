@@ -1,0 +1,33 @@
+{
+  "id": "1-07",
+  "name": "Handoff",
+  "runLimit": 2,
+  "tip": "Hold ⏳ to let time pass while Pip stays still.",
+  "grid": [
+    "########",
+    "#b*a.S.#",
+    "######.#",
+    "#E.B*A.#",
+    "######*#"
+  ],
+  "bestScore": 13,
+  "solution": [
+    [
+      "L",
+      "L",
+      "W",
+      "L",
+      "L"
+    ],
+    [
+      "R",
+      "D",
+      "D",
+      "L",
+      "L",
+      "L",
+      "L",
+      "L"
+    ]
+  ]
+}
