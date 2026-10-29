@@ -161,6 +161,17 @@ class EchoBoard extends FlameGame {
   /// The holes as last seen, to spot new ones.
   Set<Position> _holes = const {};
 
+  /// A forced rewind's fatal beat while it plays: the step's start and the
+  /// beat as it hit ([GameController.fatalBeat]). The rules have already
+  /// switched the run; the board shows this beat first (everything glides
+  /// into the hit, the burst and the cause play), then snaps to the new
+  /// run. Null otherwise, and always with reduced effects.
+  GameState? _fatalFrom;
+  GameState? _fatalAt;
+
+  /// What the board shows: the fatal beat while it plays, else the game.
+  GameState get _view => _fatalAt ?? controller.state;
+
   /// Laser beam level per laser now: 0 dark, [_warnLevel] warning, 1 firing.
   double _beamT = 1;
   static const _warnLevel = 0.3;
@@ -250,6 +261,11 @@ class EchoBoard extends FlameGame {
   @visibleForTesting
   bool get hitBurstActiveForTesting => _fx.hitBurst.active;
 
+  /// The fatal beat of a forced rewind is playing; the board still shows
+  /// the run that ended.
+  @visibleForTesting
+  bool get fatalBeatActiveForTesting => _fatalAt != null;
+
   /// Where each Shade is drawn, in tiles.
   @visibleForTesting
   List<Offset> get shadeTilesForTesting => List.unmodifiable(_shadeTiles);
@@ -333,8 +349,34 @@ class EchoBoard extends FlameGame {
   }
 
   void _onGameChanged() {
-    final state = controller.state;
-    final event = controller.lastEvent;
+    // Any change ends a fatal beat still playing; this one takes over.
+    _fatalFrom = _fatalAt = null;
+    final fatal = controller.fatalBeat;
+    if (fatal != null && !_reduceEffects) {
+      final (from, at) = fatal;
+      _fatalFrom = from;
+      _fatalAt = at;
+      // Played as an ordinary forward beat that the board times itself.
+      _apply(at, GameEvent.moved, controller.lastPipHit);
+      _fx.finish.startFor(
+        _beatLength().inMicroseconds / Duration.microsecondsPerSecond,
+      );
+      wake();
+      return;
+    }
+    _apply(controller.state, controller.lastEvent, controller.lastPipHit);
+  }
+
+  /// The fatal beat has played out (its glide and Pip's burst): show the
+  /// run the rules already started, without a second burst.
+  void _endFatalBeat() {
+    _fatalFrom = _fatalAt = null;
+    _apply(controller.state, controller.lastEvent, null);
+  }
+
+  /// Brings the board's effects up to [state], reached by [event]; [hit] is
+  /// Pip's hit on that change, if any.
+  void _apply(GameState state, GameEvent event, PipHit? hit) {
     final from = _sameRunFrom;
     final count = state.ghostPositions.length;
     final runChanged =
@@ -357,7 +399,7 @@ class EchoBoard extends FlameGame {
 
     // Sparks: a new one bursts as Pip lands on it; one dropped by a rewind
     // grows back in; a restart just puts them all back.
-    final mask = controller.sparkMask;
+    final mask = controller.sparkMaskOf(state);
     if (event == GameEvent.restarted) {
       _fx.stopSparks();
     } else if (!_reduceEffects && mask != _sparkMask) {
@@ -390,7 +432,7 @@ class EchoBoard extends FlameGame {
       _fx.finish.stop();
       _fx.stopDangers();
     }
-    _onDangers(state, event, reset);
+    _onDangers(state, event, reset, hit);
 
     // The clock stops in the beat that ends the run: finish that glide here.
     if ((event == GameEvent.won || event == GameEvent.lost) && from != null) {
@@ -407,7 +449,7 @@ class EchoBoard extends FlameGame {
     // A beat can start and end between two updates; it still needs its stop.
     _wasSettled = false;
     final from = _sameRunFrom;
-    final state = controller.state;
+    final state = _view;
     if (from != null && from.tick > state.tick) {
       _pip.onRewindBeat();
     } else {
@@ -437,6 +479,7 @@ class EchoBoard extends FlameGame {
   }
 
   GameState? get _sameRunFrom {
+    if (_fatalAt != null) return _fatalFrom;
     final from = flow.from;
     if (from == null || from.runIndex != controller.state.runIndex) {
       return null;
@@ -447,7 +490,7 @@ class EchoBoard extends FlameGame {
   /// Holes, echo hits and Pip's hit on a change. A forward beat starts
   /// their effects; a rewind stops the ones it undid. Everything drawn
   /// follows the state, so a rewind restores it all.
-  void _onDangers(GameState state, GameEvent event, bool reset) {
+  void _onDangers(GameState state, GameEvent event, bool reset, PipHit? hit) {
     _shadeLook = _lookOf(state);
     final forward =
         event == GameEvent.moved ||
@@ -478,10 +521,10 @@ class EchoBoard extends FlameGame {
       }
     }
 
-    final hit = controller.lastPipHit;
     if (hit != null && fx && (event == GameEvent.hit || forward)) {
-      // A loss glides onto the tile first; a forced rewind has snapped Pip
-      // back, so the flash marks where he fell at once.
+      // Pip glides onto the tile first (a loss, or a forced rewind's fatal
+      // beat). A forced rewind only arrives here as a hit with reduced
+      // effects, where no burst plays.
       _fx.hitBurst.startAt(
         hit.at,
         dark: hit.cause == HitCause.shade,
@@ -514,7 +557,7 @@ class EchoBoard extends FlameGame {
     _syncPositions();
 
     final frozen = flow.frozen;
-    final settled = frozen && !_fx.finish.active;
+    final settled = frozen && !_fx.finish.active && _fatalAt == null;
     if (settled && !_wasSettled) _pip.onStop();
     _wasSettled = settled;
 
@@ -526,11 +569,16 @@ class EchoBoard extends FlameGame {
       reduceEffects: _reduceEffects,
     );
 
-    if (frozen && !_pip.busy && !_fx.busy) pauseEngine();
+    // The fatal beat ends once its glide and Pip's burst are done; only
+    // then may the engine rest.
+    if (_fatalAt != null && !_fx.finish.active && !_fx.hitBurst.active) {
+      _endFatalBeat();
+    }
+    if (frozen && _fatalAt == null && !_pip.busy && !_fx.busy) pauseEngine();
   }
 
   void _syncPositions() {
-    final state = controller.state;
+    final state = _view;
     final from = _sameRunFrom;
     final t = _fx.finish.active ? _fx.finish.progress : flow.beatProgress;
     _pipTile = _tileLerp(from?.player ?? state.player, state.player, t);
@@ -558,7 +606,7 @@ class EchoBoard extends FlameGame {
   /// time flows (a frozen board is a still frame), and switches outright
   /// with reduced effects.
   double _beamLevel(int beat) {
-    final tick = controller.state.tick;
+    final tick = _view.tick;
     final to = _laserLevel(beat, tick);
     final from = _sameRunFrom;
     if (_reduceEffects || from == null || from.tick == tick) return to;
@@ -579,13 +627,13 @@ class EchoBoard extends FlameGame {
       : _wobble * math.sin(_fx.flicker * 5 + k * 1.7 + i * 2.3);
 
   bool _ghostDrawn(int i) {
-    final alive = controller.state.ghostAlive;
+    final alive = _view.ghostAlive;
     if (i >= alive.length) return false;
     return alive[i] || (i < _fx.fizzles.length && _fx.fizzles[i].active);
   }
 
   bool _holeDrawn(Position p) =>
-      controller.state.holes.contains(p) && !(_fx.dust[p]?.waiting ?? false);
+      _view.holes.contains(p) && !(_fx.dust[p]?.waiting ?? false);
 
   static Offset _tileLerp(Position a, Position b, double t) =>
       Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);

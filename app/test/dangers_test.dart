@@ -61,6 +61,9 @@ final _levels = {
   't-chase': _lvl(['S.....x', '######E']),
   // Pip steps on the crack, off it (it breaks), and back: he falls.
   't-fall': _lvl(['S~.E']),
+  // Pip grabs the spark as the crack behind him breaks, then steps back
+  // into the hole.
+  't-fall-spark': _lvl(['S~*E']),
   // A laser far from the start: its warning is silent until Pip is near.
   't-far-laser': _lvl(['S...1E']),
 };
@@ -175,6 +178,115 @@ void main() {
     await t.pump(const Duration(milliseconds: 1600));
     await t.pump(const Duration(milliseconds: 400));
     expect(_opacityOf(t, _zapped), 0);
+  });
+
+  testWidgets('a forced rewind plays the fatal beat, then snaps', (t) async {
+    await _pumpGame(t, 't-laser');
+    final board = _board(t);
+    final game = _game(t);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await t.pump(const Duration(milliseconds: 50));
+    await t.pump(const Duration(milliseconds: 50));
+    // The rules already switched the run...
+    expect(game.state.runIndex, 1);
+    expect(game.state.player, const Position(0, 0));
+    // ...but the board is still gliding Pip into the beam, which fires.
+    expect(board.fatalBeatActiveForTesting, isTrue);
+    final x = board.pipTileForTesting.dx;
+    expect(x, greaterThan(0));
+    expect(x, lessThan(1));
+    expect(board.laserGlowForTesting(const Position(1, 0)), greaterThan(0.3));
+    await pumpFrames(t, const Duration(milliseconds: 150));
+    expect(board.pipTileForTesting, const Offset(1, 0));
+    expect(board.hitBurstActiveForTesting, isTrue);
+    // Once the burst is over the board snaps to the new run.
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(board.fatalBeatActiveForTesting, isFalse);
+    expect(board.hitBurstActiveForTesting, isFalse);
+    expect(board.pipTileForTesting, Offset.zero);
+    expect(board.laserGlowForTesting(const Position(1, 0)), 0.3);
+    // And the engine can rest.
+    await pumpFrames(t, const Duration(milliseconds: 1500));
+    expect(board.paused, isTrue);
+  });
+
+  testWidgets('a Shade glides onto Pip before the rewind', (t) async {
+    await _pumpGame(t, 't-shade');
+    final board = _board(t);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.space);
+    await t.pump(const Duration(milliseconds: 50));
+    await t.pump(const Duration(milliseconds: 50));
+    expect(_game(t).lastEvent, GameEvent.hit);
+    final x = board.shadeTilesForTesting.single.dx;
+    expect(x, greaterThan(0));
+    expect(x, lessThan(1));
+    await pumpFrames(t, const Duration(milliseconds: 1000));
+    expect(board.fatalBeatActiveForTesting, isFalse);
+    expect(_game(t).state.shades, [const Position(1, 0)]);
+    expect(board.shadeTilesForTesting.single, const Offset(1, 0));
+  });
+
+  testWidgets('reduced effects make a forced rewind instant', (t) async {
+    await _pumpGame(t, 't-laser', settings: {'reduceEffects': true});
+    final board = _board(t);
+    await t.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await t.pump(const Duration(milliseconds: 50));
+    expect(_game(t).state.runIndex, 1);
+    expect(board.fatalBeatActiveForTesting, isFalse);
+    expect(board.pipTileForTesting, Offset.zero);
+    expect(board.hitBurstActiveForTesting, isFalse);
+    await pumpFrames(t, const Duration(milliseconds: 1500));
+    expect(board.paused, isTrue);
+  });
+
+  testWidgets('one rewind beat steps back across a forced rewind', (t) async {
+    await _pumpGame(t, 't-fall-spark');
+    final game = _game(t);
+    await _keys(t, 'RR');
+    final preHit = game.state;
+    expect(preHit.holes, {const Position(1, 0)});
+    expect(game.sparkMask, 1);
+    await _keys(t, 'L');
+    expect(game.lastEvent, GameEvent.hit);
+    expect(game.state.runIndex, 1);
+    expect(game.state.holes, isEmpty);
+    await pumpFrames(t, const Duration(milliseconds: 800));
+
+    await tapKey(t, LogicalKeyboardKey.keyZ);
+    expect(identical(game.state, preHit), isTrue);
+    expect(game.state.runIndex, 0);
+    expect(game.state.tick, 2);
+    expect(game.sparkMask, 1);
+    expect(find.text('New echo · 1 left'), findsOneWidget);
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    final board = _board(t);
+    expect(board.pipTileForTesting, const Offset(2, 0));
+    expect(board.holeDrawnForTesting(const Position(1, 0)), isTrue);
+    expect(board.sparkVisibleForTesting(0), isFalse);
+    // The counter still holds it.
+    expect(find.bySemanticsLabel('Sparks, 1 of 1'), findsOneWidget);
+  });
+
+  testWidgets('rewinding across a Shade catch puts the Shade back', (t) async {
+    await _pumpGame(t, 't-chase');
+    final game = _game(t);
+    await _keys(t, 'WWWWW');
+    final preHit = game.state;
+    expect(preHit.shades, [const Position(1, 0)]);
+    await _keys(t, 'W');
+    expect(game.lastEvent, GameEvent.hit);
+    expect(game.state.shades, [const Position(6, 0)]);
+    await pumpFrames(t, const Duration(milliseconds: 800));
+    await tapKey(t, LogicalKeyboardKey.keyZ);
+    expect(identical(game.state, preHit), isTrue);
+    await pumpFrames(t, const Duration(milliseconds: 600));
+    expect(_board(t).shadeTilesForTesting.single, const Offset(1, 0));
+    // Further rewinds walk back through that run.
+    await tapKey(t, LogicalKeyboardKey.keyZ);
+    expect(game.state.tick, 4);
   });
 
   testWidgets('a hit on the last run shows the lost card, no banner', (
