@@ -79,7 +79,8 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: cd app && flutter test integration_test
+          # On failure, surface the test output as annotations (job logs are hard to reach).
+          script: cd app && flutter test integration_test --reporter expanded > it.log 2>&1 || (grep -E 'EXCEPTION|Expected|Actual|Error|failed|══' it.log | head -40 | sed 's/^/::error::/'; tail -80 it.log; exit 1)
 
   app-build:
     needs: app
