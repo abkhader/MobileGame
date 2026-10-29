@@ -22,6 +22,7 @@ import '../game/flow_keys.dart';
 import '../game/game_clock.dart';
 import '../game/game_controller.dart';
 import '../game/haptics.dart';
+import '../game/hits.dart';
 import '../game/hold_button.dart';
 import '../game/palette.dart' as palette;
 import '../hints/hint_service.dart';
@@ -150,7 +151,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
     if (c.state.tick > 0 || c.state.runIndex > 0) _moved = true;
     if (c.lastEvent == GameEvent.runEnded) _onRewound();
-    if (c.lastEvent == GameEvent.hit) _onZapped();
+    if (c.lastEvent == GameEvent.hit) _onZapped(c);
     _syncHint();
     setState(() {});
   }
@@ -186,8 +187,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _newEcho() {
     final c = _controller;
-    if (c != null && c.canEndRun) c.endRun();
+    if (c != null && _canNewEcho(c)) c.endRun();
   }
+
+  /// Level 1-03 teaches echoes until the first rewind: its tip says "Tap New
+  /// echo", the button pulses, and the first-rewind tip has never shown.
+  bool _echoLesson(GameController c) =>
+      c.level.id == '1-03' &&
+      !_rewound &&
+      widget.services.progress.rewindTipsShown == 0;
+
+  /// [GameController.canEndRun], except during the 1-03 lesson at tick 0: a
+  /// player obeying the tip at once would make a 0-move echo and waste the
+  /// level's only spare run. Everywhere else New echo works at tick 0.
+  bool _canNewEcho(GameController c) =>
+      c.canEndRun && !(_echoLesson(c) && c.state.tick == 0);
 
   void _restart() => _controller?.restart();
 
@@ -195,8 +209,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const _rewindTip =
       'Echo created. It will repeat every move you just made.';
   static const _tipDuration = Duration(milliseconds: 3500);
-  static const _zapped = 'Zapped! Pip rewinds.';
   static const _zappedDuration = Duration(seconds: 2);
+
+  /// The forced-rewind banner, by what hit Pip.
+  static String hitBanner(HitCause cause) => switch (cause) {
+    HitCause.laser => 'Zapped! Pip rewinds.',
+    HitCause.hole => 'Pip fell! Pip rewinds.',
+    HitCause.shade => 'Caught! Pip rewinds.',
+  };
 
   /// A run ended and play goes on: explain the echo, for the first rewinds.
   void _onRewound() {
@@ -207,10 +227,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     _showBanner(_rewindTip, _tipDuration);
   }
 
-  /// Pip was hit and play goes on in the next run: say so every time. It
-  /// takes the rewind tip's place; a hit on the last run shows the lost
-  /// card instead.
-  void _onZapped() => _showBanner(_zapped, _zappedDuration);
+  /// Pip was hit and play goes on in the next run: say so every time, by
+  /// cause. It takes the rewind tip's place; a hit on the last run shows the
+  /// lost card instead. A forced rewind is still a rewind: it counts for the
+  /// 1-03 nudge (`_rewound`) but not toward the echo tip's two showings.
+  void _onZapped(GameController c) {
+    _rewound = true;
+    final cause = c.lastPipHit?.cause ?? HitCause.laser;
+    _showBanner(hitBanner(cause), _zappedDuration);
+  }
 
   void _showBanner(String text, Duration duration) {
     _tipTimer?.cancel();
@@ -718,21 +743,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// A new echo while runs remain; on the last run the same action gives up.
   Widget _newEchoButton(GameController c) {
     final left = c.level.runLimit - c.state.runIndex - 1;
-    final enabled = c.canEndRun;
+    final enabled = _canNewEcho(c);
     // Level 1-03 teaches echoes: nudge the button until it has been used.
-    final nudge =
-        c.level.id == '1-03' &&
-        !MediaQuery.disableAnimationsOf(context) &&
-        !_rewound &&
-        widget.services.progress.rewindTipsShown == 0;
+    // The button is off at tick 0 during the lesson, so the pulse waits for
+    // a first move too.
+    final nudge = _echoLesson(c) && !MediaQuery.disableAnimationsOf(context);
     return _button(
       left > 0 ? Icons.people_alt_outlined : Icons.flag,
       left > 0 ? 'New echo · $left left' : 'Give up',
       enabled ? _newEcho : null,
       pulse: nudge,
-      // New echo works at tick 0 too, but the tutorial nudge waits for a
-      // move: a 0-move echo would waste 1-03's only spare run.
-      pulseActive: enabled && c.state.tick > 0,
     );
   }
 
@@ -741,7 +761,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     String label,
     VoidCallback? onPressed, {
     bool pulse = false,
-    bool? pulseActive,
   }) {
     final button = OutlinedButton.icon(
       onPressed: onPressed,
@@ -758,7 +777,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ? RepaintBoundary(
                 child: _Pulse(
                   key: const Key('new-echo-pulse'),
-                  active: pulseActive ?? onPressed != null,
+                  active: onPressed != null,
                   child: button,
                 ),
               )

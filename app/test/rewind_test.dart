@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/banner_finder.dart';
 import 'support/flow_input.dart';
 
 const _frame = Duration(milliseconds: 200);
@@ -59,6 +60,21 @@ double _bannerOpacity(WidgetTester t) => t
       ),
     )
     .opacity;
+
+bool _enabled(WidgetTester t, String label) => t
+    .widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    )
+    .enabled;
+
+int _runIndex(WidgetTester t) =>
+    ((t.state(find.byType(GameScreen)) as dynamic).controllerForTesting)
+            .state
+            .runIndex
+        as int;
 
 int _tick(WidgetTester t) =>
     ((t.state(find.byType(GameScreen)) as dynamic).controllerForTesting)
@@ -143,6 +159,30 @@ void main() {
     expect(_pulse, findsNothing);
   });
 
+  testWidgets('1-03 keeps New echo off until the first move', (t) async {
+    // The tip says "Tap New echo": a 0-move echo would waste 1-03's only
+    // spare run and leave the level unwinnable.
+    await _pumpGame(t, '1-03');
+    expect(_enabled(t, 'New echo · 1 left'), isFalse);
+    await t.tap(find.text('New echo · 1 left'));
+    await t.pump(_frame);
+    await tapKey(t, LogicalKeyboardKey.keyE);
+    expect(_runIndex(t), 0);
+    await tapKey(t, LogicalKeyboardKey.space);
+    expect(_enabled(t, 'New echo · 1 left'), isTrue);
+    // Rewinding back to tick 0 turns it off again.
+    await tapKey(t, LogicalKeyboardKey.keyZ);
+    expect(_tick(t), 0);
+    expect(_enabled(t, 'New echo · 1 left'), isFalse);
+  });
+
+  testWidgets('New echo works at tick 0 on a non-tutorial 2-run level', (
+    t,
+  ) async {
+    await _pumpGame(t, '1-06');
+    expect(_enabled(t, 'New echo · 1 left'), isTrue);
+  });
+
   testWidgets('no pulse once a rewind is on record, or on other levels', (
     t,
   ) async {
@@ -158,10 +198,7 @@ void main() {
     await _pumpGame(t, '2-03');
     await _rewind(t, 'New echo · 2 left');
     expect(find.byType(SnackBar), findsNothing);
-    expect(
-      find.ancestor(of: find.text(_tip), matching: find.byType(IgnorePointer)),
-      findsWidgets,
-    );
+    expect(bannerIgnoresPointer(t, _tip), isTrue);
     final boardTop = t.getTopLeft(board).dy;
     expect(t.getTopLeft(find.text(_tip)).dy - boardTop, lessThan(60));
   });

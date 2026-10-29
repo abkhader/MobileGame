@@ -9,6 +9,7 @@ import 'package:echo_app/data/story_repository.dart';
 import 'package:echo_app/game/echo_board.dart';
 import 'package:echo_app/game/game_controller.dart';
 import 'package:echo_app/game/haptics.dart';
+import 'package:echo_app/game/hits.dart';
 import 'package:echo_app/screens/game_screen.dart';
 import 'package:echo_core/echo_core.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_ad_service.dart';
+import 'support/banner_finder.dart';
 import 'support/fake_audio_service.dart';
 import 'support/flow_input.dart';
 
@@ -57,9 +59,15 @@ final _levels = {
   't-crack': _lvl(['S~..E.', '#####.', 'x.....']),
   // A Shade at the end of a corridor that chases Pip.
   't-chase': _lvl(['S.....x', '######E']),
+  // Pip steps on the crack, off it (it breaks), and back: he falls.
+  't-fall': _lvl(['S~.E']),
+  // A laser far from the start: its warning is silent until Pip is near.
+  't-far-laser': _lvl(['S...1E']),
 };
 
 const _zapped = 'Zapped! Pip rewinds.';
+const _fell = 'Pip fell! Pip rewinds.';
+const _caught = 'Caught! Pip rewinds.';
 const _rewindTip = 'Echo created. It will repeat every move you just made.';
 
 Future<AppServices> _services(
@@ -152,13 +160,7 @@ void main() {
     expect(haptics, [HapticKind.heavy]);
     expect(find.text(_zapped), findsOneWidget);
     expect(_opacityOf(t, _zapped), 1);
-    expect(
-      find.ancestor(
-        of: find.text(_zapped),
-        matching: find.byType(IgnorePointer),
-      ),
-      findsWidgets,
-    );
+    expect(bannerIgnoresPointer(t, _zapped), isTrue);
     // Not the rewind tip: Pip did not choose this echo.
     expect(find.text(_rewindTip), findsNothing);
     expect(find.text('New echo · 0 left'), findsNothing);
@@ -193,7 +195,34 @@ void main() {
     await _keys(t, 'W');
     expect(_game(t).lastEvent, GameEvent.hit);
     expect(audio.played, [Sfx.shade]);
-    expect(find.text(_zapped), findsOneWidget);
+    expect(find.text(_caught), findsOneWidget);
+    expect(find.text(_zapped), findsNothing);
+    expect(bannerIgnoresPointer(t, _caught), isTrue);
+  });
+
+  testWidgets('a fall into a hole says Pip fell', (t) async {
+    final audio = FakeAudioService();
+    await _pumpGame(t, 't-fall', audio: audio);
+    await _keys(t, 'RRL');
+    expect(_game(t).lastEvent, GameEvent.hit);
+    expect(_game(t).lastPipHit?.cause, HitCause.hole);
+    expect(find.text(_fell), findsOneWidget);
+    expect(find.text(_zapped), findsNothing);
+    expect(bannerIgnoresPointer(t, _fell), isTrue);
+  });
+
+  testWidgets('a laser warning far from Pip stays silent', (t) async {
+    final audio = FakeAudioService();
+    await _pumpGame(t, 't-far-laser', audio: audio);
+    // Beat 1 warns at tick 3: Pip waited at the start, three tiles away.
+    await _keys(t, 'WWW');
+    expect(audio.played, [Sfx.move, Sfx.move, Sfx.move]);
+    await t.pumpWidget(const SizedBox());
+    final near = FakeAudioService();
+    await _pumpGame(t, 't-far-laser', audio: near);
+    // Three steps right: next to the laser as it warns.
+    await _keys(t, 'RRR');
+    expect(near.played, [Sfx.move, Sfx.move, Sfx.move, Sfx.laserWarn]);
   });
 
   testWidgets('cracked floor crumbles into a hole as Pip leaves it', (t) async {
