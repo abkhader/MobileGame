@@ -61,13 +61,24 @@ List<Sfx> _dangerSounds(GameState before, GameState after) {
   return [if (crumble) Sfx.crumble, if (zap) Sfx.echoZap, if (shade) Sfx.shade];
 }
 
-/// Some laser shows its warning glow in [s]: it fires on the next beat.
-/// Played on forward beats only, so at most once a beat and only while time
-/// flows.
+/// A laser on Pip's tile or one of its four neighbours shows its warning
+/// glow in [s]: it fires on the next beat, right where Pip may step. Lasers
+/// further away glow silently. Played on forward beats only, so at most once
+/// a beat and only while time flows.
 bool _laserWarns(GameState s) {
   if (s.status != GameStatus.playing) return false;
-  for (final beat in s.level.lasers.values) {
-    if (Rules.laserWarns(beat, s.tick)) return true;
+  final lasers = s.level.lasers;
+  if (lasers.isEmpty) return false;
+  final p = s.player;
+  for (final q in [
+    p,
+    Position(p.x, p.y - 1),
+    Position(p.x + 1, p.y),
+    Position(p.x, p.y + 1),
+    Position(p.x - 1, p.y),
+  ]) {
+    final beat = lasers[q];
+    if (beat != null && Rules.laserWarns(beat, s.tick)) return true;
   }
   return false;
 }

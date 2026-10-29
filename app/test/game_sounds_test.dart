@@ -199,8 +199,8 @@ void main() {
     test(
       'a laser warning plays laserWarn once on the beat before it fires',
       () {
-        final s0 = GameState.initial(lvl(['S.2.E']));
-        final s1 = Rules.step(s0, w); // tick 1: beat 2 warns
+        final s0 = GameState.initial(lvl(['S2..E']));
+        final s1 = Rules.step(s0, w); // tick 1: beat 2 warns, next to Pip
         expect(soundsFor(s0, s1, GameEvent.moved), [Sfx.move, Sfx.laserWarn]);
         final s2 = Rules.step(s1, w); // tick 2: it fires, no warning
         expect(soundsFor(s1, s2, GameEvent.moved), [Sfx.move]);
@@ -209,5 +209,27 @@ void main() {
         expect(soundsFor(s0, s1, GameEvent.runEnded), [Sfx.runEnd]);
       },
     );
+
+    test('laserWarn plays only for a laser on or next to Pip', () {
+      // Beat 2 warns at tick 1, two tiles away: silent.
+      final far = GameState.initial(lvl(['S.2.E']));
+      expect(soundsFor(far, Rules.step(far, w), GameEvent.moved), [Sfx.move]);
+      // Diagonal does not count.
+      final diag = GameState.initial(lvl(['S..E', '.2..']));
+      expect(soundsFor(diag, Rules.step(diag, w), GameEvent.moved), [Sfx.move]);
+      // Below Pip counts.
+      final below = GameState.initial(lvl(['S..E', '2...']));
+      expect(soundsFor(below, Rules.step(below, w), GameEvent.moved), [
+        Sfx.move,
+        Sfx.laserWarn,
+      ]);
+      // Standing on it counts: beat 3 warns at tick 2.
+      final on0 = GameState.initial(lvl(['S3..E']));
+      final on1 = Rules.step(on0, Move.right);
+      expect(soundsFor(on0, on1, GameEvent.moved), [Sfx.move]);
+      final on2 = Rules.step(on1, w);
+      expect(on2.player, const Position(1, 0));
+      expect(soundsFor(on1, on2, GameEvent.moved), [Sfx.move, Sfx.laserWarn]);
+    });
   });
 }
