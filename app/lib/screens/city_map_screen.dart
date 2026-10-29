@@ -50,7 +50,7 @@ class _CityMapScreenState extends State<CityMapScreen> {
     final complete = districtIds.every(
       (id) => progress.progressOf(id).completed,
     );
-    if (isLast && progress.endingSeen && complete) {
+    if (isLast && progress.endingSeenOn(districtIds.last) && complete) {
       showEnding(context, services);
     } else {
       showChapterCard(context, services, chapter);

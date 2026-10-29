@@ -80,7 +80,7 @@ class ProgressRepository extends ChangeNotifier {
     this._musicOn,
     this._sfxOn,
     this._seenChapters,
-    this._endingSeen,
+    this._endingSeenFor,
     this._rewindTipsShown,
     this._moveSpeed,
     this._reduceEffects,
@@ -96,13 +96,18 @@ class ProgressRepository extends ChangeNotifier {
   /// exists; never written.
   static const legacyStorageKey = 'echo.progress.v1';
 
+  /// The final level when the save kept a single `endingSeen` flag.
+  static const legacyLastLevel = '3-10';
+
   final SharedPreferences _prefs;
   // Presence of a key means the level is completed.
   final Map<String, LevelProgress> _levels;
   bool _musicOn;
   bool _sfxOn;
   final Set<int> _seenChapters;
-  bool _endingSeen;
+  // The last level's id when the ending was last seen: a new final level
+  // shows the ending again.
+  String? _endingSeenFor;
   int _rewindTipsShown;
   MoveSpeed _moveSpeed;
   bool _reduceEffects;
@@ -114,7 +119,7 @@ class ProgressRepository extends ChangeNotifier {
     var musicOn = true;
     var sfxOn = true;
     final seenChapters = <int>{};
-    var endingSeen = false;
+    String? endingSeenFor;
     var rewindTipsShown = 0;
     var moveSpeed = MoveSpeed.normal;
     var reduceEffects = false;
@@ -141,8 +146,12 @@ class ProgressRepository extends ChangeNotifier {
           if (decoded['sfxOn'] is bool) sfxOn = decoded['sfxOn'] as bool;
           final seen = decoded['seenChapters'];
           if (seen is List<dynamic>) seenChapters.addAll(seen.whereType<int>());
-          if (decoded['endingSeen'] is bool) {
-            endingSeen = decoded['endingSeen'] as bool;
+          final seenFor = decoded['endingSeenFor'];
+          if (seenFor is String) {
+            endingSeenFor = seenFor;
+          } else if (decoded['endingSeen'] == true) {
+            // Saves from before Chapter 4 kept one flag: seen after 3-10.
+            endingSeenFor = legacyLastLevel;
           }
           final tips = decoded['rewindTipsShown'];
           if (tips is int && tips > 0) rewindTipsShown = tips;
@@ -166,7 +175,7 @@ class ProgressRepository extends ChangeNotifier {
       musicOn = true;
       sfxOn = true;
       seenChapters.clear();
-      endingSeen = false;
+      endingSeenFor = null;
       rewindTipsShown = 0;
       moveSpeed = MoveSpeed.normal;
       reduceEffects = false;
@@ -178,7 +187,7 @@ class ProgressRepository extends ChangeNotifier {
       musicOn,
       sfxOn,
       seenChapters,
-      endingSeen,
+      endingSeenFor,
       rewindTipsShown,
       moveSpeed,
       reduceEffects,
@@ -191,7 +200,12 @@ class ProgressRepository extends ChangeNotifier {
 
   bool get musicOn => _musicOn;
   bool get sfxOn => _sfxOn;
-  bool get endingSeen => _endingSeen;
+
+  /// The final level the ending was last seen after, or null if never.
+  String? get endingSeenFor => _endingSeenFor;
+
+  /// The ending has been seen since [lastLevelId] became the final level.
+  bool endingSeenOn(String lastLevelId) => _endingSeenFor == lastLevelId;
   MoveSpeed get moveSpeed => _moveSpeed;
 
   /// No trails, shimmer, tilt/squash or tint (motion stays).
@@ -278,8 +292,9 @@ class ProgressRepository extends ChangeNotifier {
     return _save();
   }
 
-  Future<void> markEndingSeen() {
-    _endingSeen = true;
+  /// The ending was seen with [lastLevelId] as the final level.
+  Future<void> markEndingSeen(String lastLevelId) {
+    _endingSeenFor = lastLevelId;
     return _save();
   }
 
@@ -302,7 +317,9 @@ class ProgressRepository extends ChangeNotifier {
       'musicOn': _musicOn,
       'sfxOn': _sfxOn,
       'seenChapters': _seenChapters.toList()..sort(),
-      'endingSeen': _endingSeen,
+      'endingSeenFor': _endingSeenFor,
+      // Kept for older builds sharing this save, which read only the flag.
+      'endingSeen': _endingSeenFor != null,
       'rewindTipsShown': _rewindTipsShown,
       'moveSpeed': _moveSpeed.name,
       'reduceEffects': _reduceEffects,

@@ -161,7 +161,7 @@ void main() {
     _tallView(t);
     final services = await _services(t);
     await _completeChapter(t, services, 4);
-    await t.runAsync(services.progress.markEndingSeen);
+    await t.runAsync(() => services.progress.markEndingSeen('4-10'));
     await _pumpMap(t, services);
     await t.tap(find.text('The Power Lines'));
     await _settle(t);
@@ -185,7 +185,7 @@ void main() {
   testWidgets('The Power Lines shows its card while incomplete', (t) async {
     _tallView(t);
     final services = await _services(t);
-    await t.runAsync(services.progress.markEndingSeen);
+    await t.runAsync(() => services.progress.markEndingSeen('4-10'));
     await _pumpMap(t, services);
     await t.tap(find.text('The Power Lines'));
     await _settle(t);
@@ -199,7 +199,7 @@ void main() {
     _tallView(t);
     final services = await _services(t);
     await _completeChapter(t, services, 3);
-    await t.runAsync(services.progress.markEndingSeen);
+    await t.runAsync(() => services.progress.markEndingSeen('4-10'));
     await _pumpMap(t, services);
     await t.tap(find.text('The Core'));
     await _settle(t);

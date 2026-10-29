@@ -99,14 +99,19 @@ Future<void> showChapterCard(
   await _showCard(navigator, title: card.title, lines: card.lines);
 }
 
-/// Shows the ending with a fully lit skyline, marks it seen, then returns to
+/// Shows the ending with a fully lit skyline, marks it seen for the current
+/// final level, then returns to
 /// the caller. Does nothing if the story could not be loaded.
 Future<void> showEnding(BuildContext context, AppServices services) async {
   final navigator = Navigator.of(context);
   final ending = (await services.story.load())?.ending;
-  if (ending == null || ending.isEmpty || !context.mounted) return;
-  // Seen as soon as it shows, so system Back cannot make it replay or lose it.
-  unawaited(services.progress.markEndingSeen().catchError((_) {}));
+  final ids = await services.levels.levelIds();
+  if (ending == null || ending.isEmpty || ids.isEmpty || !context.mounted) {
+    return;
+  }
+  // Seen as soon as it shows, so system Back cannot make it replay or lose
+  // it; kept per final level, so a new last level shows it again.
+  unawaited(services.progress.markEndingSeen(ids.last).catchError((_) {}));
   await _showCard(navigator, title: '', lines: ending, litSkyline: true);
 }
 

@@ -125,9 +125,12 @@ class _GatedProgress extends ChangeNotifier implements ProgressRepository {
   Future<void> markChapterIntroSeen(int chapter) =>
       _inner.markChapterIntroSeen(chapter);
   @override
-  bool get endingSeen => _inner.endingSeen;
+  String? get endingSeenFor => _inner.endingSeenFor;
   @override
-  Future<void> markEndingSeen() => _inner.markEndingSeen();
+  bool endingSeenOn(String lastLevelId) => _inner.endingSeenOn(lastLevelId);
+  @override
+  Future<void> markEndingSeen(String lastLevelId) =>
+      _inner.markEndingSeen(lastLevelId);
   @override
   MoveSpeed get moveSpeed => _inner.moveSpeed;
   @override

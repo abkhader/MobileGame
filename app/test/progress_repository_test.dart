@@ -187,17 +187,48 @@ void main() {
   test('story flags default to false', () async {
     final repo = await ProgressRepository.open();
     expect(repo.seenChapterIntro(2), isFalse);
-    expect(repo.endingSeen, isFalse);
+    expect(repo.endingSeenFor, isNull);
+    expect(repo.endingSeenOn('4-10'), isFalse);
   });
 
   test('story flags persist per chapter', () async {
     var repo = await ProgressRepository.open();
     await repo.markChapterIntroSeen(2);
-    await repo.markEndingSeen();
+    await repo.markEndingSeen('4-10');
     repo = await ProgressRepository.open();
     expect(repo.seenChapterIntro(2), isTrue);
     expect(repo.seenChapterIntro(1), isFalse);
-    expect(repo.endingSeen, isTrue);
+    expect(repo.endingSeenOn('4-10'), isTrue);
+  });
+
+  test('the ending is seen per final level', () async {
+    var repo = await ProgressRepository.open();
+    await repo.markEndingSeen('3-10');
+    repo = await ProgressRepository.open();
+    expect(repo.endingSeenFor, '3-10');
+    expect(repo.endingSeenOn('3-10'), isTrue);
+    // A new final level shows the ending again.
+    expect(repo.endingSeenOn('4-10'), isFalse);
+  });
+
+  test('the old ending flag means seen for 3-10', () async {
+    SharedPreferences.setMockInitialValues({
+      key: '{"levels":{},"endingSeen":true}',
+    });
+    var repo = await ProgressRepository.open();
+    expect(repo.endingSeenFor, '3-10');
+    expect(repo.endingSeenOn('4-10'), isFalse);
+    await repo.markEndingSeen('4-10');
+    repo = await ProgressRepository.open();
+    expect(repo.endingSeenFor, '4-10');
+  });
+
+  test('the old ending flag false means never seen', () async {
+    SharedPreferences.setMockInitialValues({
+      key: '{"levels":{},"endingSeen":false}',
+    });
+    final repo = await ProgressRepository.open();
+    expect(repo.endingSeenFor, isNull);
   });
 
   test('old saved data without story keys still opens', () async {
@@ -208,17 +239,17 @@ void main() {
     expect(repo.progressOf('1-01').stars, 1);
     expect(repo.musicOn, isFalse);
     expect(repo.seenChapterIntro(1), isFalse);
-    expect(repo.endingSeen, isFalse);
+    expect(repo.endingSeenFor, isNull);
   });
 
   test('story flags survive later progress saves', () async {
     var repo = await ProgressRepository.open();
     await repo.markChapterIntroSeen(1);
-    await repo.markEndingSeen();
+    await repo.markEndingSeen('4-10');
     await repo.recordWin('1-01', score: 4, best: 4, sparkMask: 0);
     repo = await ProgressRepository.open();
     expect(repo.seenChapterIntro(1), isTrue);
-    expect(repo.endingSeen, isTrue);
+    expect(repo.endingSeenOn('4-10'), isTrue);
   });
 
   test('rewind tip count starts at 0 and survives reopen', () async {

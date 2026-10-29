@@ -34,8 +34,9 @@ Future<AppServices> _services(
   WidgetTester t, {
   FakeAdService? ads,
   AssetBundle? storyBundle,
+  Map<String, Object> prefs = const {},
 }) async {
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues(prefs);
   final progress = (await t.runAsync(ProgressRepository.open))!;
   return AppServices(
     levels: LevelRepository(PlatformAssetBundle()),
@@ -211,7 +212,7 @@ void main() {
     final last = ids.last;
     expect(last, '4-10');
     await _pumpMap(t, services);
-    expect(services.progress.endingSeen, isFalse);
+    expect(services.progress.endingSeenFor, isNull);
 
     await _pushLevelComplete(t, services, last);
     await _tapAndSettle(t, find.text('Levels'));
@@ -220,7 +221,7 @@ void main() {
     expect(find.byType(StoryCardScreen), findsNothing);
     expect(find.byType(LevelCompleteScreen), findsNothing);
     expect(_map, findsOneWidget);
-    expect(services.progress.endingSeen, isTrue);
+    expect(services.progress.endingSeenFor, '4-10');
 
     await _pushLevelComplete(t, services, last);
     await _tapAndSettle(t, find.text('Levels'));
@@ -229,13 +230,28 @@ void main() {
     expect(_map, findsOneWidget);
   });
 
+  testWidgets('an ending seen for 3-10 shows again after 4-10', (t) async {
+    // A preview save from before Chapter 4: the old flag means 3-10.
+    final services = await _services(
+      t,
+      prefs: {ProgressRepository.storageKey: '{"endingSeen":true}'},
+    );
+    expect(services.progress.endingSeenFor, '3-10');
+    await _pumpMap(t, services);
+    await _pushLevelComplete(t, services, '4-10');
+    await _tapAndSettle(t, find.text('Levels'));
+    expect(find.text('Thanks for playing.'), findsOneWidget);
+    await _tapAndSettle(t, find.byKey(_skipKey));
+    expect(services.progress.endingSeenFor, '4-10');
+  });
+
   testWidgets('3-10 is no longer last: its win shows no ending', (t) async {
     final services = await _services(t);
     await _pumpMap(t, services);
     await _pushLevelComplete(t, services, '3-10');
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.text('Thanks for playing.'), findsNothing);
-    expect(services.progress.endingSeen, isFalse);
+    expect(services.progress.endingSeenFor, isNull);
   });
 
   testWidgets('Levels on an earlier level shows no ending', (t) async {
@@ -245,7 +261,7 @@ void main() {
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.byType(StoryCardScreen), findsNothing);
     expect(_map, findsOneWidget);
-    expect(services.progress.endingSeen, isFalse);
+    expect(services.progress.endingSeenFor, isNull);
   });
 
   testWidgets('the card calls onDone exactly once', (t) async {
@@ -336,6 +352,6 @@ void main() {
     await t.binding.handlePopRoute();
     await t.pump(_frame);
     await t.pump(const Duration(milliseconds: 500));
-    expect(services.progress.endingSeen, isTrue);
+    expect(services.progress.endingSeenFor, '4-10');
   });
 }

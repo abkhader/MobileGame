@@ -194,7 +194,7 @@ class _LevelCompleteScreenState extends State<LevelCompleteScreen>
     await _maybeInterstitial();
     if (!mounted) return;
     // The first win on the last level ends the story before the map.
-    if (_isLast && !widget.services.progress.endingSeen) {
+    if (_isLast && !widget.services.progress.endingSeenOn(widget.levelId)) {
       await showEnding(context, widget.services);
       if (!mounted) return;
     }
