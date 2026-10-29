@@ -33,6 +33,20 @@ abstract final class Rules {
   ///
   /// A win on the final tick beats the tick cap.
   static GameState step(GameState s, Move m) {
+    final next = stepInRun(s, m);
+    if (next.lastHits.pip ||
+        (next.status == GameStatus.playing && next.tick == maxTicksPerRun)) {
+      return _endRun(next, next.lastHits);
+    }
+    return next;
+  }
+
+  /// [step] without its run end: the beat as it resolves, before a hit Pip
+  /// or the tick cap ends the run. So the app can show the fatal beat (Pip
+  /// on the tile that hit him, the Shades where they caught him) before the
+  /// forced rewind. Its [GameState.lastHits] are the beat's hits; when
+  /// `lastHits.pip` is set, [step] returns `endRun` of this state.
+  static GameState stepInRun(GameState s, Move m) {
     if (s.status != GameStatus.playing) {
       throw StateError('Cannot step: the level is already ${s.status.name}.');
     }
@@ -109,7 +123,7 @@ abstract final class Rules {
 
     // 5. Doors from the actors still standing.
 
-    final next = GameState(
+    return GameState(
       level: level,
       runIndex: s.runIndex,
       tick: tick,
@@ -128,11 +142,6 @@ abstract final class Rules {
       shades: shades,
       lastHits: hits,
     );
-    if (pipHit ||
-        (next.status == GameStatus.playing && next.tick == maxTicksPerRun)) {
-      return _endRun(next, hits);
-    }
-    return next;
   }
 
   /// Ends the current run (the player's "New echo"). On the last run the
@@ -205,15 +214,24 @@ abstract final class Rules {
     Set<Position> openDoors,
   ) => _move(level, from, m, openDoors);
 
-  /// Where each Shade of [s] would step on the next beat if no actor moved:
-  /// [shadeStep] toward Pip and the live ghosts, with [s]'s doors. What a
-  /// Shade's eyes show. Parallel to `s.shades`; allocates distance fields, so
-  /// call it once per state, not per frame.
+  /// Where each Shade of [s] steps on the next beat if Pip waits: every
+  /// live echo takes its scripted next move (see [moveTarget], with [s]'s
+  /// doors), Pip stays put, then [shadeStep] runs exactly as in [step]. What
+  /// a Shade's eyes show: the echoes' moves are known, only Pip's is not.
+  /// Parallel to `s.shades`; allocates distance fields, so call it once per
+  /// state change, never per frame.
   static List<Position> shadeLookahead(GameState s) {
     if (s.shades.isEmpty) return const [];
-    final lights = [s.player, ..._live(s.ghostAlive, s.ghostPositions)];
+    final level = s.level;
+    final lights = [s.player];
+    for (var i = 0; i < s.ghosts.length; i++) {
+      if (!s.ghostAlive[i]) continue;
+      final recording = s.ghosts[i];
+      final move = s.tick < recording.length ? recording[s.tick] : Move.wait;
+      lights.add(_move(level, s.ghostPositions[i], move, s.openDoors));
+    }
     return [
-      for (final sh in s.shades) shadeStep(s.level, s.openDoors, sh, lights),
+      for (final sh in s.shades) shadeStep(level, s.openDoors, sh, lights),
     ];
   }
 
