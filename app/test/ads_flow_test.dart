@@ -41,7 +41,7 @@ Future<AppServices> _services(
   FakeAdService ads, {
   AdPolicy policy = const AdPolicy(),
 }) async {
-  SharedPreferences.setMockInitialValues(introsSeenPrefs());
+  SharedPreferences.setMockInitialValues(await introsSeenPrefs(t));
   final progress = (await t.runAsync(ProgressRepository.open))!;
   return AppServices(
     levels: LevelRepository(PlatformAssetBundle()),

@@ -17,7 +17,7 @@ const _frame = Duration(milliseconds: 200);
 final _thumb = find.byKey(const Key('thumb-hint'));
 
 Future<AppServices> _services(WidgetTester t) async {
-  SharedPreferences.setMockInitialValues(introsSeenPrefs());
+  SharedPreferences.setMockInitialValues(await introsSeenPrefs(t));
   final progress = (await t.runAsync(ProgressRepository.open))!;
   return AppServices(
     levels: LevelRepository(PlatformAssetBundle()),

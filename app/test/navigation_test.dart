@@ -26,7 +26,7 @@ final _locked = find.bySemanticsLabel(RegExp(r'^Level \d+, locked$'));
 final _map = find.text('Lumen City');
 
 Future<AppServices> _services(WidgetTester t) async {
-  SharedPreferences.setMockInitialValues(introsSeenPrefs());
+  SharedPreferences.setMockInitialValues(await introsSeenPrefs(t));
   final progress = (await t.runAsync(ProgressRepository.open))!;
   return AppServices(
     levels: LevelRepository(PlatformAssetBundle()),

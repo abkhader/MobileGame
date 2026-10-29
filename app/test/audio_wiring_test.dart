@@ -147,7 +147,7 @@ void main() {
 
   testWidgets('a failing audio backend does not break Home', (t) async {
     final audio = FakeAudioService(throws: true);
-    final services = await _services(t, audio, prefs: introsSeenPrefs());
+    final services = await _services(t, audio, prefs: await introsSeenPrefs(t));
     await t.pumpWidget(MaterialApp(home: HomeScreen(services: services)));
     await t.pump(_frame);
     expect(audio.startMusicCalls, 1);

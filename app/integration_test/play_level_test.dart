@@ -17,7 +17,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('plays level 1 to completion', (tester) async {
-    SharedPreferences.setMockInitialValues(introsSeenPrefs());
+    SharedPreferences.setMockInitialValues(await introsSeenPrefs(tester));
     final progress = await ProgressRepository.open();
     await tester.pumpWidget(
       EchoApp(
