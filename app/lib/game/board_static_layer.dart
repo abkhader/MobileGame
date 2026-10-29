@@ -246,25 +246,15 @@ class BoardStaticLayer {
   static List<Position> _readingOrder(Iterable<Position> ps) =>
       ps.toList()..sort((a, b) => a.y != b.y ? a.y - b.y : a.x - b.x);
 
-  /// A laser runs between two emitters on opposite tile edges: across the
-  /// tile, or up and down when walls (or the board's edge) close it in on
-  /// the left and right but not above and below.
-  bool _vertical(Position p) {
-    bool open(Position q) =>
-        level.inBounds(q) && level.tileAt(q).kind != TileKind.wall;
-    final sidesShut =
-        !open(Position(p.x - 1, p.y)) && !open(Position(p.x + 1, p.y));
-    final endsShut =
-        !open(Position(p.x, p.y - 1)) && !open(Position(p.x, p.y + 1));
-    return sidesShut && !endsShut;
-  }
+  bool _vertical(Position p) => laserBeamVertical(level, p);
 
+  /// The emitters sit on the tile's two edges the beam spans, so each
+  /// post straddles the wall face it is mounted on.
   (Offset, Offset) _emitterCentres(BoardLayout layout, Position p) {
     final r = layout.rectOf(p);
-    final e = layout.cellSize * 0.09;
     return _vertical(p)
-        ? (Offset(r.center.dx, r.top + e), Offset(r.center.dx, r.bottom - e))
-        : (Offset(r.left + e, r.center.dy), Offset(r.right - e, r.center.dy));
+        ? (Offset(r.center.dx, r.top), Offset(r.center.dx, r.bottom))
+        : (Offset(r.left, r.center.dy), Offset(r.right, r.center.dy));
   }
 
   /// Cracked tiles: a slightly lighter slab with a few cracks.
@@ -335,4 +325,26 @@ class BoardStaticLayer {
       paragraph.dispose();
     }
   }
+}
+
+/// Whether the laser at [p] draws its beam up and down (else left to
+/// right). A beam is a gate across the path, its emitters on the walls:
+///
+/// * walls (or the board's edge) above and below, as in a horizontal
+///   corridor: up and down, across the walkway;
+/// * walls left and right, as in a vertical corridor: left to right;
+/// * otherwise (open floor, a half-open tile, or walled on all four sides)
+///   the beam crosses the axis with more walls next to it, hanging from a
+///   lone wall above or below; on a tie (open floor) it runs left to right.
+bool laserBeamVertical(Level level, Position p) {
+  int wall(int dx, int dy) {
+    final q = Position(p.x + dx, p.y + dy);
+    return !level.inBounds(q) || level.tileAt(q).kind == TileKind.wall ? 1 : 0;
+  }
+
+  final ends = wall(0, -1) + wall(0, 1);
+  final sides = wall(-1, 0) + wall(1, 0);
+  if (ends == 2 && sides < 2) return true;
+  if (sides == 2 && ends < 2) return false;
+  return ends > sides;
 }
