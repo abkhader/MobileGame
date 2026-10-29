@@ -162,9 +162,123 @@ void main() {
       expect(c.state.runIndex, 1);
       expect(c.state.player, const Position(0, 0));
       expect(c.previous, isNull);
-      expect(c.canUndo, isFalse);
       expect(c.lastPipHit!.at, const Position(1, 0));
       expect(c.lastPipHit!.cause, HitCause.laser);
+    });
+
+    test('the fatal beat: the step before the hit and the beat as it hit', () {
+      final c = GameController(_level(['S1.E']));
+      expect(c.fatalBeat, isNull);
+      final before = c.state;
+      c.move(Move.right);
+      final (from, at) = c.fatalBeat!;
+      expect(identical(from, before), isTrue);
+      expect(at.runIndex, 0);
+      expect(at.tick, 1);
+      expect(at.player, const Position(1, 0));
+      expect(at.lastHits.pip, isTrue);
+      // Any later change drops it.
+      c.move(Move.wait);
+      expect(c.fatalBeat, isNull);
+    });
+
+    test('no fatal beat for a loss, which keeps its glide', () {
+      final c = GameController(_level(['S1.E'], runLimit: 1));
+      c.move(Move.right);
+      expect(c.fatalBeat, isNull);
+    });
+  });
+
+  group('undo across a hit', () {
+    // Run 0 waits once (a voluntary New echo). In run 1 Pip crosses the
+    // crack (it breaks), grabs the spark and stands on the laser, while a
+    // far Shade creeps closer; the laser then fires and forces a rewind.
+    Level level() => _level(['S~*1E', '####.', 'x....'], runLimit: 4);
+
+    GameController hitRun(List<GameState> seen) {
+      final c = GameController(level());
+      c.move(Move.wait);
+      c.endRun();
+      for (final m in [Move.right, Move.right, Move.right]) {
+        c.move(m);
+        seen.add(c.state);
+      }
+      c.move(Move.wait);
+      return c;
+    }
+
+    test('one rewind returns to the state just before the hit beat', () {
+      final seen = <GameState>[];
+      final c = hitRun(seen);
+      final preHit = seen.last;
+      expect(c.lastEvent, GameEvent.hit);
+      expect(c.state.runIndex, 2);
+      expect(c.state.holes, isEmpty);
+      expect(c.canUndo, isTrue);
+      c.undo();
+      expect(c.lastEvent, GameEvent.none);
+      expect(identical(c.state, preHit), isTrue);
+      expect(c.state.runIndex, 1);
+      expect(c.state.tick, 3);
+      expect(c.state.player, const Position(3, 0));
+      expect(c.state.holes, {const Position(1, 0)});
+      expect(c.state.ghosts, hasLength(1));
+      expect(c.state.ghostAlive, [true]);
+      expect(c.state.shades, [const Position(3, 2)]);
+      expect(c.sparkMask, 1);
+      expect(c.previous, isNull);
+    });
+
+    test('rewind then goes on through that run, and stops at New echo', () {
+      final seen = <GameState>[];
+      final c = hitRun(seen);
+      c.undo();
+      c.undo();
+      expect(identical(c.state, seen[1]), isTrue);
+      c.undo();
+      c.undo();
+      expect(c.state.runIndex, 1);
+      expect(c.state.tick, 0);
+      // The run started with a voluntary New echo: rewind stops here.
+      expect(c.canUndo, isFalse);
+    });
+
+    test('moves after the hit rewind first, then cross it', () {
+      final seen = <GameState>[];
+      final c = hitRun(seen);
+      c.move(Move.wait);
+      c.undo();
+      expect(c.state.runIndex, 2);
+      expect(c.state.tick, 0);
+      expect(c.canUndo, isTrue);
+      c.undo();
+      expect(identical(c.state, seen.last), isTrue);
+    });
+
+    test('a New echo or a restart closes the way back', () {
+      final seen = <GameState>[];
+      final c = hitRun(seen);
+      c.endRun();
+      expect(c.state.runIndex, 3);
+      expect(c.canUndo, isFalse);
+
+      final r = hitRun(<GameState>[]);
+      r.restart();
+      expect(r.canUndo, isFalse);
+    });
+
+    test('stepping back across two hits in a row', () {
+      final c = GameController(_level(['S1.E'], runLimit: 3));
+      final start = c.state;
+      c.move(Move.right);
+      final afterFirst = c.state;
+      c.move(Move.right);
+      expect(c.state.runIndex, 2);
+      c.undo();
+      expect(identical(c.state, afterFirst), isTrue);
+      c.undo();
+      expect(identical(c.state, start), isTrue);
+      expect(c.canUndo, isFalse);
     });
 
     test('a hit on the last run is lost, Pip on the hit tile', () {

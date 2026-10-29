@@ -9,11 +9,21 @@ import 'hits.dart';
 enum GameEvent { none, moved, runEnded, hit, won, lost, restarted }
 
 /// Wraps the engine [Rules] for the UI, with a per-run undo stack.
+///
+/// Undo also steps back across a forced rewind, through app-only history:
+/// the rules and the solver know nothing of it. A run the player ended
+/// (New echo), the tick cap and a restart stay hard boundaries.
 class GameController extends ChangeNotifier {
   GameController(this.level) : _state = GameState.initial(level);
 
   final Level level;
   final List<GameState> _undoStack = [];
+
+  /// One entry per forced rewind since the last voluntary run end: the
+  /// state just before the fatal beat and that run's undo stack, newest
+  /// last. Undo at the start of a run a hit began pops one.
+  final List<(GameState, List<GameState>)> _hitHistory = [];
+  (GameState, GameState)? _fatalBeat;
 
   GameState _state;
   GameState? _previous;
@@ -31,9 +41,18 @@ class GameController extends ChangeNotifier {
   /// was a step that hit him ([GameEvent.hit], or a hit [GameEvent.lost]).
   PipHit? get lastPipHit => _lastPipHit;
 
+  /// On a forced rewind ([GameEvent.hit]) only: the state before the step
+  /// and the beat as it hit ([Rules.stepInRun]: Pip on the tile that hit
+  /// him, echoes and Shades where they were), so the board can play the
+  /// fatal beat before snapping to the new run. Null after any other change.
+  (GameState, GameState)? get fatalBeat => _fatalBeat;
+
   bool get _playing => _state.status == GameStatus.playing;
 
-  bool get canUndo => _playing && _undoStack.isNotEmpty;
+  /// Undo steps back one beat in this run, or, at the start of a run a hit
+  /// began, back to the state just before that hit.
+  bool get canUndo =>
+      _playing && (_undoStack.isNotEmpty || _hitHistory.isNotEmpty);
 
   /// New echo works at tick 0 while runs remain (a 0-move echo waits on the
   /// start); Give up on the final run needs at least one beat, so it is
@@ -69,6 +88,14 @@ class GameController extends ChangeNotifier {
     final after = Rules.step(before, m);
     final runChanged = after.runIndex != before.runIndex;
     _state = after;
+    final forced =
+        runChanged && after.lastHits.pip && after.status == GameStatus.playing;
+    if (forced) {
+      _hitHistory.add((before, List.of(_undoStack)));
+    } else if (runChanged) {
+      // The tick cap ended the run: a boundary like New echo.
+      _hitHistory.clear();
+    }
     if (runChanged || after.status != GameStatus.playing) {
       _undoStack.clear();
     } else {
@@ -76,6 +103,7 @@ class GameController extends ChangeNotifier {
     }
     _previous = runChanged ? null : before;
     _lastPipHit = pipHitOf(before, after);
+    _fatalBeat = forced ? (before, Rules.stepInRun(before, m)) : null;
     _lastEvent = switch (after.status) {
       GameStatus.won => GameEvent.won,
       GameStatus.lost => GameEvent.lost,
@@ -91,9 +119,16 @@ class GameController extends ChangeNotifier {
 
   void undo() {
     if (!canUndo) return;
-    _state = _undoStack.removeLast();
+    if (_undoStack.isNotEmpty) {
+      _state = _undoStack.removeLast();
+    } else {
+      final (preHit, stack) = _hitHistory.removeLast();
+      _state = preHit;
+      _undoStack.addAll(stack);
+    }
     _previous = null;
     _lastPipHit = null;
+    _fatalBeat = null;
     _lastEvent = GameEvent.none;
     notifyListeners();
   }
@@ -102,8 +137,10 @@ class GameController extends ChangeNotifier {
     if (!canEndRun) return;
     _state = Rules.endRun(_state);
     _undoStack.clear();
+    _hitHistory.clear();
     _previous = null;
     _lastPipHit = null;
+    _fatalBeat = null;
     _lastEvent = _state.status == GameStatus.lost
         ? GameEvent.lost
         : GameEvent.runEnded;
@@ -113,8 +150,10 @@ class GameController extends ChangeNotifier {
   void restart() {
     _state = GameState.initial(level);
     _undoStack.clear();
+    _hitHistory.clear();
     _previous = null;
     _lastPipHit = null;
+    _fatalBeat = null;
     _lastEvent = GameEvent.restarted;
     notifyListeners();
   }
