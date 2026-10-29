@@ -175,8 +175,16 @@ void main() {
     }
   });
 
+  // This search ignores lasers, cracked floor and Shades, so on a level
+  // with dangers it cannot show that the dangers are what makes every run
+  // necessary. Those levels' proofs are the exact every-world search's
+  // (`solveTracked`, checked against an independent reference in
+  // tracked_search_test.dart and dangers_test.dart).
+  bool hasDangers(Level l) =>
+      l.lasers.isNotEmpty || l.cracked.isNotEmpty || l.shadeStarts.isNotEmpty;
+
   group('runLimit - 1 runs cannot reach the exit within 25 ticks', () {
-    for (final level in levels.where((l) => l.runLimit > 1)) {
+    for (final level in levels.where((l) => l.runLimit > 1 && !hasDangers(l))) {
       test(level.id, () {
         expect(canReachExit(level, level.runLimit - 1), isFalse);
       });

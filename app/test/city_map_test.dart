@@ -54,9 +54,13 @@ Future<void> _pumpMap(WidgetTester t, AppServices services) async {
   await _settle(t);
 }
 
-/// A view tall enough to show all three districts at once.
+/// The Power Lines card's first line.
+const _powerLinesLine =
+    "The Core is awake, but its power can't reach the city.";
+
+/// A view tall enough to show every district at once.
 void _tallView(WidgetTester t) {
-  t.view.physicalSize = const Size(800, 2000);
+  t.view.physicalSize = const Size(800, 2600);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
 }
@@ -151,42 +155,79 @@ void main() {
     expect(find.text('Lumen City'), findsOneWidget);
   });
 
-  testWidgets('The Core replays the ending once it was seen and earned', (
+  testWidgets('The Power Lines replays the ending once seen and earned', (
     t,
   ) async {
     _tallView(t);
     final services = await _services(t);
-    await _completeChapter(t, services, 3);
+    await _completeChapter(t, services, 4);
     await t.runAsync(services.progress.markEndingSeen);
     await _pumpMap(t, services);
-    await t.tap(find.text('The Core'));
+    await t.tap(find.text('The Power Lines'));
     await _settle(t);
     expect(find.text('Thanks for playing.', skipOffstage: false), findsOne);
-    expect(find.text('The Core powers the whole city.'), findsNothing);
+    expect(find.text(_powerLinesLine), findsNothing);
   });
 
-  testWidgets('The Core shows its card while the ending is unseen', (t) async {
-    _tallView(t);
-    final services = await _services(t);
-    await _completeChapter(t, services, 3);
-    await _pumpMap(t, services);
-    await t.tap(find.text('The Core'));
-    await _settle(t);
-    expect(find.text('The Core powers the whole city.'), findsOneWidget);
-    expect(find.text('Thanks for playing.', skipOffstage: false), findsNothing);
-  });
-
-  testWidgets('The Core shows its card while the chapter is incomplete', (
+  testWidgets('The Power Lines shows its card while the ending is unseen', (
     t,
   ) async {
     _tallView(t);
     final services = await _services(t);
+    await _completeChapter(t, services, 4);
+    await _pumpMap(t, services);
+    await t.tap(find.text('The Power Lines'));
+    await _settle(t);
+    expect(find.text(_powerLinesLine), findsOneWidget);
+    expect(find.text('Thanks for playing.', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('The Power Lines shows its card while incomplete', (t) async {
+    _tallView(t);
+    final services = await _services(t);
+    await t.runAsync(services.progress.markEndingSeen);
+    await _pumpMap(t, services);
+    await t.tap(find.text('The Power Lines'));
+    await _settle(t);
+    expect(find.text(_powerLinesLine), findsOneWidget);
+    expect(find.text('Thanks for playing.', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('The Core is no longer last: it always replays its card', (
+    t,
+  ) async {
+    _tallView(t);
+    final services = await _services(t);
+    await _completeChapter(t, services, 3);
     await t.runAsync(services.progress.markEndingSeen);
     await _pumpMap(t, services);
     await t.tap(find.text('The Core'));
     await _settle(t);
     expect(find.text('The Core powers the whole city.'), findsOneWidget);
     expect(find.text('Thanks for playing.', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('one district per bundled chapter, 3 sparks per level', (
+    t,
+  ) async {
+    _tallView(t);
+    final services = await _services(t);
+    final ids = (await t.runAsync(services.levels.levelIds))!;
+    final chapters = {for (final id in ids) id.split('-').first};
+    expect(chapters, {'1', '2', '3', '4'});
+    await _pumpMap(t, services);
+    for (final title in [
+      'The Outskirts',
+      'The Market',
+      'The Core',
+      'The Power Lines',
+    ]) {
+      expect(find.text(title), findsOneWidget);
+    }
+    expect(find.bySemanticsLabel('Level 31, locked'), findsOneWidget);
+    expect(find.bySemanticsLabel('Level 40, locked'), findsOneWidget);
+    expect(ids.length * 3, 120);
+    expect(find.text('0 / 120'), findsOneWidget);
   });
 
   for (final size in const [Size(320, 640), Size(360, 800)]) {
@@ -223,7 +264,7 @@ void main() {
     _tallView(t);
     final services = await _services(t, storyBundle: _BrokenStoryBundle());
     await _pumpMap(t, services);
-    for (final title in ['Chapter 1', 'Chapter 2', 'Chapter 3']) {
+    for (final title in ['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4']) {
       expect(find.text(title), findsOneWidget);
     }
     expect(find.text('The Outskirts'), findsNothing);

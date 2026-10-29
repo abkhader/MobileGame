@@ -7,21 +7,18 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  // Chapters 1 to 3, or 1 to 4 once chapter 4 ships: 10 levels each.
-  test(
-    'the bundled levels are C-01 to C-10 for chapters 1 to 3 or 4',
-    () async {
-      final ids = await LevelRepository(PlatformAssetBundle()).levelIds();
-      final chapters = ids.map((id) => int.parse(id.split('-').first)).toSet();
-      final last = chapters.fold(0, (a, b) => a > b ? a : b);
-      expect(last, anyOf(3, 4));
-      expect(ids.toSet(), {
-        for (var c = 1; c <= last; c++)
-          for (var n = 1; n <= 10; n++) '$c-${'$n'.padLeft(2, '0')}',
-      });
-      expect(ids, hasLength(10 * last));
-    },
-  );
+  // Chapters 1 to 4: 10 levels each.
+  test('the bundled levels are C-01 to C-10 for chapters 1 to 4', () async {
+    final ids = await LevelRepository(PlatformAssetBundle()).levelIds();
+    final chapters = ids.map((id) => int.parse(id.split('-').first)).toSet();
+    final last = chapters.fold(0, (a, b) => a > b ? a : b);
+    expect(last, 4);
+    expect(ids.toSet(), {
+      for (var c = 1; c <= last; c++)
+        for (var n = 1; n <= 10; n++) '$c-${'$n'.padLeft(2, '0')}',
+    });
+    expect(ids, hasLength(10 * last));
+  });
 
   test(
     'every bundled level replays its stored solution to bestScore',

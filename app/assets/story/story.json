@@ -23,6 +23,14 @@
         "Its locks open only to perfect timing.",
         "Four echoes, one Pip, one chance to bring the light back."
       ]
+    },
+    "4": {
+      "title": "The Power Lines",
+      "lines": [
+        "The Core is awake, but its power can't reach the city.",
+        "The Power Lines are broken: wild lasers, crumbling floors.",
+        "Watch the rhythm, step lightly, and let your echoes lead the way."
+      ]
     }
   },
   "ending": {

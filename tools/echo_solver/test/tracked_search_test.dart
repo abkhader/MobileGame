@@ -41,12 +41,14 @@ List<String> withSpark(List<String> grid, int x, int y) => [
 ];
 
 void main() {
-  test('the bundled levels have no dangers, so they keep the old search', () {
+  test('chapters 1-3 have no dangers, so they keep the old search; '
+      'every chapter 4 level has dangers', () {
     final files = Directory(
       '../../app/assets/levels',
     ).listSync().whereType<File>().where((f) => f.path.endsWith('.json'));
     for (final f in files) {
-      expect(hasDangers(LevelLoader.parse(f.readAsStringSync())), isFalse);
+      final level = LevelLoader.parse(f.readAsStringSync());
+      expect(hasDangers(level), level.id.startsWith('4-'), reason: level.id);
     }
   });
 

@@ -203,14 +203,17 @@ void main() {
     expect(t.widget<GameScreen>(find.byType(GameScreen)).levelId, '1-01');
   });
 
-  testWidgets('ending shows once after first 3-10 win', (t) async {
+  testWidgets('ending shows once after the first win of the last level', (
+    t,
+  ) async {
     final services = await _services(t);
     final ids = (await t.runAsync(services.levels.levelIds))!;
-    expect(ids.last, '3-10');
+    final last = ids.last;
+    expect(last, '4-10');
     await _pumpMap(t, services);
     expect(services.progress.endingSeen, isFalse);
 
-    await _pushLevelComplete(t, services, '3-10');
+    await _pushLevelComplete(t, services, last);
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.text('Thanks for playing.'), findsOneWidget);
     await _tapAndSettle(t, find.byKey(_skipKey));
@@ -219,11 +222,20 @@ void main() {
     expect(_map, findsOneWidget);
     expect(services.progress.endingSeen, isTrue);
 
-    await _pushLevelComplete(t, services, '3-10');
+    await _pushLevelComplete(t, services, last);
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.text('Thanks for playing.'), findsNothing);
     expect(find.byType(LevelCompleteScreen), findsNothing);
     expect(_map, findsOneWidget);
+  });
+
+  testWidgets('3-10 is no longer last: its win shows no ending', (t) async {
+    final services = await _services(t);
+    await _pumpMap(t, services);
+    await _pushLevelComplete(t, services, '3-10');
+    await _tapAndSettle(t, find.text('Levels'));
+    expect(find.text('Thanks for playing.'), findsNothing);
+    expect(services.progress.endingSeen, isFalse);
   });
 
   testWidgets('Levels on an earlier level shows no ending', (t) async {
@@ -316,8 +328,9 @@ void main() {
 
   testWidgets('Back on the ending card still marks it seen', (t) async {
     final services = await _services(t);
+    final ids = (await t.runAsync(services.levels.levelIds))!;
     await _pumpMap(t, services);
-    await _pushLevelComplete(t, services, '3-10');
+    await _pushLevelComplete(t, services, ids.last);
     await _tapAndSettle(t, find.text('Levels'));
     expect(find.text('Thanks for playing.'), findsOneWidget);
     await t.binding.handlePopRoute();

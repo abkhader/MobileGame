@@ -34,7 +34,7 @@ void main() {
     expect(ids, [...ids]..sort());
     expect(ids.toSet().length, ids.length);
     for (final id in ids) {
-      expect(id, matches(RegExp(r'^[1-3]-(0[1-9]|10)$')));
+      expect(id, matches(RegExp(r'^[1-4]-(0[1-9]|10)$')));
     }
   });
 

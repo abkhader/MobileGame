@@ -465,16 +465,28 @@ void main() {
       final map = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
       expect(level.solution, isNotNull, reason: f.path);
       expect(map['bestScore'], isA<int>(), reason: f.path);
+      // Levels without dangers (chapters 1-3) must play exactly as before
+      // dangers existed: no holes, no Shades, no hits.
+      final dangers =
+          level.lasers.isNotEmpty ||
+          level.cracked.isNotEmpty ||
+          level.shadeStarts.isNotEmpty;
       var s = GameState.initial(level);
-      for (final run in level.solution!) {
-        for (final m in run) {
+      final runs = level.solution!;
+      for (var i = 0; i < runs.length; i++) {
+        for (final m in runs[i]) {
           s = Rules.step(s, m);
-          expect(s.holes, isEmpty);
-          expect(s.shades, isEmpty);
-          expect(s.ghostAlive.every((a) => a), isTrue);
-          expect(s.lastHits, Hits.none);
+          if (!dangers) {
+            expect(s.holes, isEmpty);
+            expect(s.shades, isEmpty);
+            expect(s.ghostAlive.every((a) => a), isTrue);
+            expect(s.lastHits, Hits.none);
+          }
         }
-        if (s.status == GameStatus.playing) s = Rules.endRun(s);
+        // A run a hit already ended (forced rewind) is not ended again.
+        if (s.status == GameStatus.playing && s.runIndex == i) {
+          s = Rules.endRun(s);
+        }
       }
       expect((s.status, s.score), (GameStatus.won, level.bestScore));
     }

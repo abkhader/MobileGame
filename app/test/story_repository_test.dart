@@ -52,7 +52,13 @@ void main() {
     expect(story!.chapters[1]!.title, 'The Outskirts');
     expect(story.chapters[2]!.title, 'The Market');
     expect(story.chapters[3]!.title, 'The Core');
-    for (final c in [1, 2, 3]) {
+    expect(story.chapters[4]!.title, 'The Power Lines');
+    expect(story.chapters[4]!.lines, [
+      "The Core is awake, but its power can't reach the city.",
+      'The Power Lines are broken: wild lasers, crumbling floors.',
+      'Watch the rhythm, step lightly, and let your echoes lead the way.',
+    ]);
+    for (final c in [1, 2, 3, 4]) {
       expect(story.chapters[c]!.lines, hasLength(3));
     }
     expect(
